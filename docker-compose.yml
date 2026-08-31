@@ -1,0 +1,12 @@
+﻿version: '3.8'
+
+services:
+  streamlit:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./reports:/app/reports
+      - ./models:/app/models
+    environment:
+      - STREAMLIT_THEME_BASE=dark

@@ -1,105 +1,82 @@
-import os
-"""
-Single Prediction Page
-"""
 import streamlit as st
 import pandas as pd
-import numpy as np
-import plotly.express as px
-from utils import get_features, get_models, predict_single, get_shap_explanation, load_feature_names_fallback
+import joblib
+import shap
+import matplotlib.pyplot as plt
+import os
 
-st.set_page_config(page_title="Predict", page_icon="??", layout="wide")
+st.set_page_config(page_title="Predict", page_icon="🔮", layout="wide")
 
-st.title("?? Single Prediction")
-st.markdown("Enter client features to predict subscription likelihood.")
+st.title("🔮 Model Prediction & Explainability")
 
-# Get feature names
-feature_names = get_features() or load_feature_names_fallback()
-if not feature_names:
-    st.error("? Could not load feature names. Make sure FastAPI is running.")
+# Load the trained pipeline
+pipeline_path = "models/model_pipeline.pkl"
+if os.path.exists(pipeline_path):
+    pipeline = joblib.load(pipeline_path)
+else:
+    st.error("Model not found! Please run `python src/train_models.py` first.")
     st.stop()
 
-# Model selection
-models, default_model = get_models()
-if not models:
-    st.warning("No models available from API.")
-    selected_model = "XGBoost"
-else:
-    selected_model = st.selectbox("Choose model", models, index=models.index(default_model) if default_model in models else 0)
+# --- USER INPUT FORM ---
+st.subheader("Enter Features for Prediction")
 
-st.markdown("---")
+# Create the user input dictionary here
+# (Replace these with your actual Streamlit widgets - selectbox, number_input, etc.)
+with st.form("prediction_form"):
+    age = st.number_input("Age", min_value=18, max_value=100, value=30)
+    job = st.selectbox("Job", ["admin.", "blue-collar", "technician", "services", "management", "retired", "student", "unknown"])
+    marital = st.selectbox("Marital Status", ["married", "single", "divorced"])
+    education = st.selectbox("Education", ["basic.4y", "high.school", "university.degree", "professional.course", "unknown"])
+    # ... add the rest of your features here ...
+    
+    # Collect into a dictionary
+    user_input_dict = {
+        "age": age,
+        "job": job,
+        "marital": marital,
+        "education": education,
+        # ... include all other matching column names ...
+    }
+    
+    predict_button = st.form_submit_button("Predict")
 
-# Input features in two columns
-col1, col2 = st.columns(2)
-input_values = []
-with col1:
-    for i, name in enumerate(feature_names[:10]):
-        val = st.number_input(f"{name}", value=0.0, step=0.1, key=f"single_{i}")
-        input_values.append(val)
-with col2:
-    for i, name in enumerate(feature_names[10:]):
-        idx = i + 10
-        val = st.number_input(f"{name}", value=0.0, step=0.1, key=f"single_{idx}")
-        input_values.append(val)
-
-if st.button("?? Predict", type="primary"):
-    if len(input_values) != len(feature_names):
-        st.error(f"Please fill all {len(feature_names)} features.")
+# --- PREDICTION AND REAL-TIME SHAP ---
+if predict_button:
+    # 1. Convert inputs to DataFrame
+    user_df = pd.DataFrame([user_input_dict])
+    
+    # 2. Make the prediction
+    prediction = pipeline.predict(user_df)[0]
+    probability = pipeline.predict_proba(user_df)[0].tolist()
+    
+    st.subheader("Prediction Result")
+    if prediction == 1:
+        st.success(f"Prediction: YES (Probability: {probability[1]:.2%})")
     else:
-        with st.spinner("Predicting..."):
-            result, elapsed = predict_single(input_values, selected_model)
-            if result:
-                st.success(f"? Prediction complete (took {elapsed:.3f}s)")
-                pred = result["prediction"]
-                proba = result["probability"]
-                confidence = result["confidence"]
-                model_used = result["model_used"]
-                
-                # Display results
-                cols = st.columns(3)
-                with cols[0]:
-                    st.metric("Prediction", "Subscribed ?" if pred == 1 else "Not Subscribed ?")
-                with cols[1]:
-                    st.metric("Probability", f"{proba:.2%}")
-                with cols[2]:
-                    st.metric("Confidence", f"{confidence:.1f}%")
-                
-                st.info(f"Model used: {model_used}")
-                
-                # SHAP explanation
-                st.subheader("?? How features influenced this prediction")
-                # For demonstration, we'll use a sample SHAP from index 0 (or we can compute online)
-                # Since we have cached SHAP, we can show a waterfall for a similar profile.
-                # Instead, we'll fetch a precomputed waterfall from reports.
-                shap_img = "reports/shap_waterfall_sample.png"
-                if os.path.exists(shap_img):
-                    st.image(shap_img, caption="Example SHAP waterfall (for a different sample)")
-                else:
-                    st.info("Run `python src/explainability.py` to generate SHAP waterfall plots.")
-            else:
-                st.error("? Prediction failed. Check API logs.")
-
-# Show a sample input
-with st.expander("?? Feature descriptions"):
-    st.markdown("""
-    Features (19 total):
-    - **age**: Age of client
-    - **job**: Encoded job category
-    - **marital**: Encoded marital status
-    - **education**: Encoded education level
-    - **default**: Has credit in default?
-    - **housing**: Has housing loan?
-    - **loan**: Has personal loan?
-    - **contact**: Contact communication type
-    - **month**: Last contact month (encoded)
-    - **day_of_week**: Last contact day (encoded)
-    - **campaign**: Number of contacts during campaign
-    - **pdays**: Days since last contact from previous campaign
-    - **previous**: Number of contacts before this campaign
-    - **poutcome**: Outcome of previous campaign
-    - **emp.var.rate**: Employment variation rate
-    - **cons.price.idx**: Consumer price index
-    - **cons.conf.idx**: Consumer confidence index
-    - **euribor3m**: Euribor 3 month rate
-    - **nr.employed**: Number of employees
-    """)
+        st.error(f"Prediction: NO (Probability: {probability[0]:.2%})")
+    
+    st.markdown("---")
+    
+    # 3. Explain THIS SPECIFIC prediction using SHAP
+    st.subheader("Why was this prediction made?")
+    try:
+        # Transform the exact user input using the saved pipeline
+        X_transformed = pipeline.named_steps['preprocessor'].transform(user_df)
+        
+        # Create SHAP explainer on the trained model
+        explainer = shap.Explainer(pipeline.named_steps['classifier'], X_transformed)
+        shap_values = explainer(X_transformed)
+        
+        # Plot the waterfall
+        plt.figure()
+        shap.plots.waterfall(shap_values[0], max_display=10)
+        plt.savefig("reports/current_prediction_shap.png", bbox_inches='tight')
+        plt.close()
+        
+        # Display the plot using the FIXED parameter
+        st.image("reports/current_prediction_shap.png", 
+                 caption="Feature contributions for THIS exact prediction", 
+                 use_container_width=True)
+        
+    except Exception as e:
+        st.warning(f"Could not generate SHAP plot: {e}")

@@ -1,125 +1,133 @@
-﻿"""
-Evaluation script with latency benchmarking.
-Measures accuracy, F1, ROC-AUC, and inference time per 1000 rows.
-Saves results to reports/performance_table.csv
-"""
+﻿import os
+import joblib
 import pandas as pd
 import numpy as np
-import joblib
-import time
-import os
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
-import warnings
-warnings.filterwarnings('ignore')
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+from sklearn.preprocessing import StandardScaler
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.pipeline import Pipeline
+from tabpfn import TabPFNClassifier
+from xgboost import XGBClassifier
 
-MODELS_DIR = "models"
-PROCESSED_DIR = "data/processed"
-REPORTS_DIR = "reports"
+# ---------------------------
+# 1. Load and Prepare Data
+# ---------------------------
+data_path = r'C:\Users\subrato dutta\tabpfn-portfolio-project\data\raw\bank-additional-full.csv'
+if not os.path.exists(data_path):
+    print(f"Error: File not found at {data_path}")
+    exit()
 
-def evaluate():
-    print("=" * 60)
-    print("STEP 3: Model Evaluation with Latency Benchmarking")
-    print("=" * 60)
-    
-    # Load test data
-    X_test = np.load(f"{PROCESSED_DIR}/X_test.npy")
-    y_test = np.load(f"{PROCESSED_DIR}/y_test.npy")
-    print(f"Test set: {len(X_test)} rows, {X_test.shape[1]} features")
-    
-    # Load models
-    models = {}
-    model_files = {
-        "Logistic Regression": "logistic_regression.pkl",
-        "Random Forest": "random_forest.pkl",
-        "XGBoost": "xgboost.pkl",
-        # "TabPFN": "tabpfn_model.pkl"  # Add later
-    }
-    
-    for name, filename in model_files.items():
-        path = f"{MODELS_DIR}/{filename}"
-        if os.path.exists(path):
-            models[name] = joblib.load(path)
-            print(f"✅ Loaded: {name}")
-        else:
-            print(f"⚠️ Skipping: {name} (file not found)")
-    
-    if not models:
-        print("❌ No models found!")
-        return
-    
-    # Use subset for latency measurement (1000 rows)
-    latency_sample = X_test[:1000]
-    if len(latency_sample) < 1000:
-        latency_sample = X_test
-        print(f"⚠️ Test set has only {len(latency_sample)} rows; using full set for latency.")
-    
-    results = []
-    print("\n" + "-" * 60)
-    print("Evaluating models...")
-    print("-" * 60)
-    
-    for name, model in models.items():
-        print(f"\n📊 {name}")
-        
-        # --- Accuracy metrics ---
-        try:
-            y_pred = model.predict(X_test)
-            acc = accuracy_score(y_test, y_pred)
-            f1 = f1_score(y_test, y_pred)
-            # ROC-AUC
-            try:
-                if hasattr(model, "predict_proba"):
-                    y_proba = model.predict_proba(X_test)[:, 1]
-                else:
-                    y_proba = y_pred
-                roc = roc_auc_score(y_test, y_proba)
-            except:
-                roc = 0.0
-            
-            print(f"  Accuracy:  {acc:.4f}")
-            print(f"  F1 Score:  {f1:.4f}")
-            print(f"  ROC-AUC:   {roc:.4f}")
-        except Exception as e:
-            print(f"  ❌ Error: {e}")
-            continue
-        
-        # --- Inference latency benchmark ---
-        try:
-            # Warm-up
-            _ = model.predict(latency_sample[:1])
-            # Measure
-            start_time = time.perf_counter()
-            _ = model.predict(latency_sample)
-            elapsed = time.perf_counter() - start_time
-            latency_per_1000 = elapsed * (1000 / len(latency_sample))
-            print(f"  Latency:   {latency_per_1000:.4f} s per 1000 rows")
-            print(f"  Throughput:{1000/latency_per_1000:.1f} rows/s")
-        except Exception as e:
-            print(f"  ❌ Latency measurement failed: {e}")
-            latency_per_1000 = -1
-        
-        results.append([name, acc, f1, roc, latency_per_1000])
-    
-    # Save results
-    os.makedirs(REPORTS_DIR, exist_ok=True)
-    df = pd.DataFrame(results, columns=["Model", "Accuracy", "F1", "ROC-AUC", "Latency (s per 1000 rows)"])
-    df.to_csv(f"{REPORTS_DIR}/performance_table.csv", index=False)
-    
-    print("\n" + "=" * 60)
-    print("📊 FINAL PERFORMANCE COMPARISON")
-    print("=" * 60)
-    print(df.to_string(index=False))
-    
-    if len(df) > 0:
-        best_acc = df.loc[df['Accuracy'].idxmax()]
-        best_f1 = df.loc[df['F1'].idxmax()]
-        fastest = df.loc[df['Latency (s per 1000 rows)'].idxmin()]
-        print("\n🏆 Summary:")
-        print(f"  Best Accuracy:  {best_acc['Model']} ({best_acc['Accuracy']:.4f})")
-        print(f"  Best F1 Score:  {best_f1['Model']} ({best_f1['F1']:.4f})")
-        print(f"  Fastest:        {fastest['Model']} ({fastest['Latency (s per 1000 rows)']:.4f} s/1000)")
-    
-    print(f"\n📁 Results saved to: {REPORTS_DIR}/performance_table.csv")
+# Bank dataset uses semicolon separator
+df = pd.read_csv(data_path, sep=';')
 
-if __name__ == "__main__":
-    evaluate()
+# Target is 'y'
+X = df.drop('y', axis=1)
+y = df['y']
+
+# Define column types
+categorical_cols = X.select_dtypes(include=['object']).columns
+numerical_cols = X.select_dtypes(exclude=['object']).columns
+
+# Create Preprocessor (Same as training)
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', StandardScaler(), numerical_cols),
+        ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_cols)
+    ])
+
+# Split Data
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# ---------------------------
+# 2. Define Models
+# ---------------------------
+# Make sure you have xgboost installed: pip install xgboost
+models = {
+    "Logistic Regression": LogisticRegression(max_iter=1000),
+    "Random Forest": RandomForestClassifier(n_estimators=100, random_state=42),
+    "XGBoost": XGBClassifier(use_label_encoder=False, eval_metric='logloss', random_state=42)
+}
+
+# TabPFN is added to the list, but we handle it separately because it is strict
+# about fitting on transformed (scaled/encoded) data only.
+model_names = list(models.keys()) + ["TabPFN"]
+
+# ---------------------------
+# 3. Train and Evaluate
+# ---------------------------
+results = []
+
+for name, model in models.items():
+    print(f"Training {name}...")
+    # Create Pipeline for sklearn models
+    pipeline = Pipeline(steps=[('preprocessor', preprocessor), ('classifier', model)])
+    
+    # Train
+    pipeline.fit(X_train, y_train)
+    
+    # Predict
+    y_pred = pipeline.predict(X_test)
+    
+    # Metrics
+    acc = accuracy_score(y_test, y_pred)
+    prec = precision_score(y_test, y_pred, pos_label='yes')
+    rec = recall_score(y_test, y_pred, pos_label='yes')
+    f1 = f1_score(y_test, y_pred, pos_label='yes')
+    
+    results.append({
+        "Model": name, "Accuracy": acc, "Precision": prec, "Recall": rec, "F1 Score": f1
+    })
+    print(f"  {name} Accuracy: {acc:.4f}")
+
+# ---------------------------
+# 4. Train and Evaluate TabPFN (Separate Process)
+# ---------------------------
+print("Training TabPFN...")
+# TabPFN requires the data to be numeric and scaled. 
+# We fit the preprocessor on training data and transform both train and test.
+X_train_transformed = preprocessor.fit_transform(X_train)
+X_test_transformed = preprocessor.transform(X_test)
+
+# TabPFN expects numpy arrays
+# Note: TabPFN is designed for small datasets (<10k samples). If your dataset is large, this might take a while.
+try:
+    tabpfn = TabPFNClassifier(device='cpu', random_state=42)
+    tabpfn.fit(X_train_transformed, y_train)
+    y_pred_tabpfn = tabpfn.predict(X_test_transformed)
+    
+    acc_tabpfn = accuracy_score(y_test, y_pred_tabpfn)
+    prec_tabpfn = precision_score(y_test, y_pred_tabpfn, pos_label='yes')
+    rec_tabpfn = recall_score(y_test, y_pred_tabpfn, pos_label='yes')
+    f1_tabpfn = f1_score(y_test, y_pred_tabpfn, pos_label='yes')
+    
+    results.append({
+        "Model": "TabPFN", "Accuracy": acc_tabpfn, "Precision": prec_tabpfn, "Recall": rec_tabpfn, "F1 Score": f1_tabpfn
+    })
+    print(f"  TabPFN Accuracy: {acc_tabpfn:.4f}")
+except Exception as e:
+    print(f"TabPFN training failed (likely due to dataset size): {e}")
+    # Create a placeholder row so the app doesn't crash
+    results.append({
+        "Model": "TabPFN", "Accuracy": 0.0, "Precision": 0.0, "Recall": 0.0, "F1 Score": 0.0
+    })
+
+# ---------------------------
+# 5. Save Results
+# ---------------------------
+results_df = pd.DataFrame(results)
+os.makedirs('reports', exist_ok=True)
+results_df.to_csv('reports/performance_table.csv', index=False)
+
+# Save Training History (placeholder for your Streamlit UI)
+training_history = pd.DataFrame({
+    "Model": results_df["Model"],
+    "Status": ["Trained"] * len(results_df)
+})
+training_history.to_csv('reports/training_results.csv', index=False)
+
+print("\nAll models evaluated!")
+print("Results saved to 'reports/performance_table.csv'")
