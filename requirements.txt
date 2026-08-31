@@ -1,0 +1,23 @@
+﻿# Core ML libraries
+numpy==1.26.4
+pandas==2.2.1
+scikit-learn==1.5.0
+
+# Tree-based models
+xgboost==2.0.3
+
+# TabPFN (the star of the project)
+tabpfn==0.1.0
+
+# Explainability
+shap==0.44.1
+
+# API and Web UI
+fastapi==0.111.0
+uvicorn==0.30.1
+gradio==4.25.0
+
+# Utilities
+joblib==1.4.0
+python-multipart==0.0.9
+python-dotenv==1.0.1

@@ -1,0 +1,20 @@
+Feature,Mean |SHAP|
+nr.employed,0.4792396
+euribor3m,0.40880036
+age,0.31974867
+campaign,0.23584867
+contact,0.18992078
+cons.conf.idx,0.16646945
+job,0.15522118
+education,0.15380363
+day_of_week,0.14501792
+cons.price.idx,0.13188009
+pdays,0.121500656
+housing,0.11196206
+marital,0.101942904
+month,0.093425095
+poutcome,0.08468366
+emp.var.rate,0.07574963
+loan,0.06685194
+default,0.05134097
+previous,0.0474602
