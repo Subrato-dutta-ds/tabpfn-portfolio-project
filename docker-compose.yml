@@ -1,12 +1,22 @@
 ﻿version: '3.8'
 
 services:
-  streamlit:
+  fastapi:
     build: .
+    command: uvicorn src.api:app --host 0.0.0.0 --port 8000
     ports:
-      - "8501:8501"
+      - "8000:8000"
     volumes:
-      - ./reports:/app/reports
       - ./models:/app/models
     environment:
       - STREAMLIT_THEME_BASE=dark
+
+  streamlit:
+    build: .
+    command: streamlit run streamlit_app.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE_URL=http://fastapi:8000 # Internal Docker network URL
+    depends_on:
+      - fastapi

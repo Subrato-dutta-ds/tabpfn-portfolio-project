@@ -4,7 +4,6 @@ from fastapi import FastAPI, HTTPException
 
 app = FastAPI()
 
-# Load the ENTIRE pipeline (scaler + encoder + model) 
 try:
     pipeline = joblib.load("models/model_pipeline.pkl")
 except FileNotFoundError:
@@ -13,13 +12,9 @@ except FileNotFoundError:
 @app.post("/predict")
 async def predict(features: dict):
     try:
-        # Convert the JSON input dictionary to a DataFrame
         df = pd.DataFrame([features])
-        
-        # Pipeline automatically scales and encodes, then predicts!
         prediction = pipeline.predict(df)[0]
         probability = pipeline.predict_proba(df)[0].tolist()
-        
         return {"prediction": int(prediction), "probability": probability}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
