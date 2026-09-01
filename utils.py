@@ -9,7 +9,7 @@ import json
 import time
 import os
 
-API_URL = "http://localhost:8000"
+API_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 def check_api_health():
     """Check if FastAPI is running."""
