@@ -13,11 +13,11 @@ app = FastAPI()
 
 @app.get("/")
 def root():
-    return {"status": "ok", "model": metadata['model'], "threshold": best_threshold}
+    return {"status": "ok", "model": metadata['model'], "threshold": float(best_threshold)}
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "model": metadata['model'], "threshold": best_threshold}
+    return {"status": "ok", "model": metadata['model'], "threshold": float(best_threshold)}
 
 class CustomerFeatures(BaseModel):
     age: int
@@ -54,9 +54,10 @@ def map_to_dataset(data: CustomerFeatures):
 def predict(data: CustomerFeatures):
     try:
         df = pd.DataFrame([map_to_dataset(data)])
-        probability = pipeline.predict_proba(df)[0, 1]
+        # CRITICAL FIX: Cast np.float32 to standard Python float!
+        probability = float(pipeline.predict_proba(df)[0, 1])
         prediction = int(probability >= best_threshold)
-        return {'prediction': prediction, 'probability': probability, 'threshold': best_threshold}
+        return {'prediction': prediction, 'probability': probability, 'threshold': float(best_threshold)}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -67,8 +68,9 @@ class BatchFeatures(BaseModel):
 def predict_batch(batch: BatchFeatures):
     try:
         df = pd.DataFrame([map_to_dataset(item) for item in batch.data])
-        probabilities = pipeline.predict_proba(df)[:, 1]
-        predictions = (probabilities >= best_threshold).astype(int).tolist()
+        # CRITICAL FIX: Cast the entire list to standard Python floats
+        probabilities = [float(p) for p in pipeline.predict_proba(df)[:, 1]]
+        predictions = [int(p >= best_threshold) for p in probabilities]
         return {'results': [{'prediction': p, 'probability': prob} for p, prob in zip(predictions, probabilities)]}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
