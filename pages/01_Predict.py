@@ -1,22 +1,48 @@
 ﻿import streamlit as st
-import requests
+import pandas as pd
+import joblib
 import os
+import shap
+import matplotlib.pyplot as plt
 
-API_URL = os.getenv('API_BASE_URL', 'http://localhost:8000')
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PIPELINE_PATH = os.path.join(BASE_DIR, 'models', 'model_pipeline.pkl')
 
-st.title('Predict')
-st.write('This app calls the FastAPI backend.')
+@st.cache_resource
+def load_pipeline():
+    return joblib.load(PIPELINE_PATH)
 
-with st.form('form'):
-    age = st.number_input('Age', 18, 100, 30)
-    job = st.selectbox('Job', ['admin.', 'blue-collar', 'technician', 'services', 'management', 'retired', 'student', 'unknown'])
-    # Add the rest of your 19 features here later!
-    btn = st.form_submit_button('Predict')
+@st.cache_resource
+def get_explainer(pipeline):
+    # Cache the explainer so we don't recreate it every time!
+    model = pipeline.named_steps['classifier']
+    background = shap.sample(pipeline.named_steps['preprocessor'].transform(pd.DataFrame([X_train_sample])), 100)
+    explainer = shap.Explainer(model, background)
+    return explainer
 
-if btn:
-    data = {'age': age, 'job': job}
-    try:
-        response = requests.post(f'{API_URL}/predict', json=data)
-        st.success(f'API Response: {response.json()}')
-    except Exception as e:
-        st.error(f'API Error: {e}. Please run uvicorn src.api:app --reload first!')
+pipeline = load_pipeline()
+
+st.title('Prediction & Explainability')
+st.write('Explaining predictions with cached SHAP values.')
+
+# Simplified input form for demo
+age = st.number_input('Age', 18, 100, 30)
+job = st.selectbox('Job', ['admin.', 'blue-collar', 'technician', 'services', 'management', 'retired', 'student', 'unknown'])
+# ... add rest of inputs ...
+
+if st.button('Predict'):
+    user_df = pd.DataFrame([{'age': age, 'job': job}])
+    X_transformed = pipeline.named_steps['preprocessor'].transform(user_df)
+    
+    prediction = pipeline.predict(user_df)[0]
+    st.write(f'Prediction: {prediction}')
+    
+    # Use cached explainer
+    explainer = get_explainer(pipeline)
+    shap_values = explainer(X_transformed)
+    
+    # Plot with correct feature names
+    feature_names = pipeline.named_steps['preprocessor'].get_feature_names_out()
+    plt.figure()
+    shap.plots.waterfall(shap_values[0], max_display=10)
+    st.pyplot(plt)

@@ -37,3 +37,18 @@ def predict(data: CustomerFeatures):
         return {'prediction': int(prediction), 'probability': probability}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+from pydantic import BaseModel
+from typing import List
+
+class BatchFeatures(BaseModel):
+    data: List[CustomerFeatures]
+
+@app.post('/predict-batch')
+def predict_batch(batch: BatchFeatures):
+    try:
+        df = pd.DataFrame([item.model_dump() for item in batch.data])
+        predictions = pipeline.predict(df).tolist()
+        probabilities = pipeline.predict_proba(df).tolist()
+        return {'results': [{'prediction': int(p), 'probability': prob} for p, prob in zip(predictions, probabilities)]}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
