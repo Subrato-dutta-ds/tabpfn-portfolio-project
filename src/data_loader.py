@@ -5,7 +5,6 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_PATH = os.path.join(BASE_DIR, 'data', 'raw', 'bank-additional-full.csv')
 
 def load_data():
-    # Load raw, drop duration to prevent leakage
     df = pd.read_csv(DATA_PATH, sep=';')
     df = df.drop(columns=['duration'], errors='ignore')
     return df

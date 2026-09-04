@@ -8,6 +8,10 @@ pipeline = joblib.load(os.path.join(BASE_DIR, 'models', 'model_pipeline.pkl'))
 
 app = FastAPI()
 
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
 class CustomerFeatures(BaseModel):
     age: int
     job: str
@@ -29,27 +33,13 @@ class CustomerFeatures(BaseModel):
     euribor3m: float
     nr_employed: float
 
-# CRITICAL FIX: Map Pydantic fields to actual dataset column names (dots!)
 def map_to_dataset(data: CustomerFeatures):
     return {
-        "age": data.age,
-        "job": data.job,
-        "marital": data.marital,
-        "education": data.education,
-        "default": data.default,
-        "housing": data.housing,
-        "loan": data.loan,
-        "contact": data.contact,
-        "month": data.month,
-        "day_of_week": data.day_of_week,
-        "campaign": data.campaign,
-        "pdays": data.pdays,
-        "previous": data.previous,
-        "poutcome": data.poutcome,
-        "emp.var.rate": data.emp_var_rate,
-        "cons.price.idx": data.cons_price_idx,
-        "cons.conf.idx": data.cons_conf_idx,
-        "euribor3m": data.euribor3m,
+        "age": data.age, "job": data.job, "marital": data.marital, "education": data.education,
+        "default": data.default, "housing": data.housing, "loan": data.loan, "contact": data.contact,
+        "month": data.month, "day_of_week": data.day_of_week, "campaign": data.campaign, "pdays": data.pdays,
+        "previous": data.previous, "poutcome": data.poutcome, "emp.var.rate": data.emp_var_rate,
+        "cons.price.idx": data.cons_price_idx, "cons.conf.idx": data.cons_conf_idx, "euribor3m": data.euribor3m,
         "nr.employed": data.nr_employed
     }
 
