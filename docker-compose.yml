@@ -8,8 +8,6 @@ services:
       - "8000:8000"
     volumes:
       - ./models:/app/models
-    environment:
-      - STREAMLIT_THEME_BASE=dark
 
   streamlit:
     build: .
@@ -17,6 +15,6 @@ services:
     ports:
       - "8501:8501"
     environment:
-      - API_BASE_URL=http://fastapi:8000 # Internal Docker network URL
+      - API_BASE_URL=http://fastapi:8000
     depends_on:
       - fastapi

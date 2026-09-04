@@ -1,29 +1,27 @@
-﻿# TabPFN Portfolio Project
+﻿# Bank Marketing Prediction System
 
-## Problem Statement
-*Add a brief description of the problem (e.g., Predicting if a bank client will subscribe to a term deposit).*
+## Problem & Business Objective
+The bank wants to know which customers to contact to maximize subscription rates. With a highly imbalanced dataset (~11% positive), **Accuracy is misleading**; we prioritize **Recall and Precision@20%** to optimize marketing budget.
 
 ## Dataset
-*Add a brief description of the dataset (Bank Marketing dataset from UCI).*
+UCI Bank Marketing Dataset (semicolon separated, contains duration which is dropped to prevent data leakage).
 
-## Approach
-1. **Preprocessing:** Uses a saved ColumnTransformer pipeline (OneHotEncoder + StandardScaler) to ensure exact consistency between training and inference.
-2. **Modeling:** Compares Logistic Regression, Random Forest, and XGBoost, with optional TabPFN.
-3. **Explainability:** Generates real-time SHAP waterfall plots for individual predictions.
+## Preprocessing
+Canonical ColumnTransformer used for Training, Validation, Testing, and Inference: StandardScaler for numericals, OneHotEncoder for categoricals.
 
-## Results
-*Insert your final accuracy/F1 scores here (e.g., 91.08% accuracy).*
+## Models & Business Metrics
+Evaluated Logistic Regression, Random Forest, XGBoost, and TabPFN. Primary metric: F1, Secondary: PR-AUC, Tertiary: Precision@20%.
+*[Paste your actual results here after running evaluate.py]*
 
 ## Architecture
-Streamlit UI -> FastAPI -> Saved ML Pipeline (joblib)
-
-## Demo
-*(Add a screenshot or GIF of your UI here)*
+Streamlit UI -> FastAPI (Pydantic Validation) -> Saved ML Pipeline -> Prediction
 
 ## How to Run
 1. pip install -r requirements.txt
-2. python src/train_models.py (Trains and saves the pipeline)
-3. streamlit run streamlit_app.py
+2. python src/train_models.py
+3. python src/evaluate.py
+4. uvicorn src.api:app --reload
+5. streamlit run streamlit_app.py
 
-## Tech Stack
-Python, Streamlit, FastAPI, Scikit-learn, SHAP, TabPFN, Docker.
+## Deployment
+Docker Compose (FastAPI + Streamlit) and GitHub Actions CI/CD.
