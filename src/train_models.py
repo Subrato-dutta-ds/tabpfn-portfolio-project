@@ -1,6 +1,4 @@
-﻿import os
-import joblib
-import pandas as pd
+﻿import os, joblib, pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.pipeline import Pipeline
@@ -13,9 +11,11 @@ DATA_PATH = os.path.join(BASE_DIR, 'data', 'raw', 'bank-additional-full.csv')
 
 df = pd.read_csv(DATA_PATH, sep=';')
 df = df.drop(columns=['duration'], errors='ignore')
+
 X = df.drop('y', axis=1)
 y = df['y']
 
+# Stratified Split
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=RANDOM_STATE, stratify=y)
 
 categorical_cols = X.select_dtypes(include=['object']).columns

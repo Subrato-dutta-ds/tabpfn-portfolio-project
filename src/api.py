@@ -1,6 +1,7 @@
 ﻿import os, joblib, pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from typing import List
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 pipeline = joblib.load(os.path.join(BASE_DIR, 'models', 'model_pipeline.pkl'))
@@ -28,17 +29,39 @@ class CustomerFeatures(BaseModel):
     euribor3m: float
     nr_employed: float
 
+# CRITICAL FIX: Map Pydantic fields to actual dataset column names (dots!)
+def map_to_dataset(data: CustomerFeatures):
+    return {
+        "age": data.age,
+        "job": data.job,
+        "marital": data.marital,
+        "education": data.education,
+        "default": data.default,
+        "housing": data.housing,
+        "loan": data.loan,
+        "contact": data.contact,
+        "month": data.month,
+        "day_of_week": data.day_of_week,
+        "campaign": data.campaign,
+        "pdays": data.pdays,
+        "previous": data.previous,
+        "poutcome": data.poutcome,
+        "emp.var.rate": data.emp_var_rate,
+        "cons.price.idx": data.cons_price_idx,
+        "cons.conf.idx": data.cons_conf_idx,
+        "euribor3m": data.euribor3m,
+        "nr.employed": data.nr_employed
+    }
+
 @app.post('/predict')
 def predict(data: CustomerFeatures):
     try:
-        df = pd.DataFrame([data.model_dump()])
+        df = pd.DataFrame([map_to_dataset(data)])
         prediction = pipeline.predict(df)[0]
         probability = pipeline.predict_proba(df)[0].tolist()
         return {'prediction': int(prediction), 'probability': probability}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-from pydantic import BaseModel
-from typing import List
 
 class BatchFeatures(BaseModel):
     data: List[CustomerFeatures]
@@ -46,7 +69,7 @@ class BatchFeatures(BaseModel):
 @app.post('/predict-batch')
 def predict_batch(batch: BatchFeatures):
     try:
-        df = pd.DataFrame([item.model_dump() for item in batch.data])
+        df = pd.DataFrame([map_to_dataset(item) for item in batch.data])
         predictions = pipeline.predict(df).tolist()
         probabilities = pipeline.predict_proba(df).tolist()
         return {'results': [{'prediction': int(p), 'probability': prob} for p, prob in zip(predictions, probabilities)]}
