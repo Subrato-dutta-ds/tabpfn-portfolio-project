@@ -1,6 +1,11 @@
 {
-    "model": "Random Forest",
-    "threshold": 0.65,
+    "model": "XGBoost",
+    "threshold": 0.3,
     "primary_metric": "F1",
-    "f1_score": 0.5296758104738155
+    "f1": 0.517051705170517,
+    "pr_auc": 0.4835723803195689,
+    "roc_auc": 0.8102364056087552,
+    "precision_at_20": 0.374013357619915,
+    "lift_at_20": 3.320174612147478,
+    "brier_score": 0.07517674565315247
 }
