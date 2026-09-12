@@ -54,9 +54,14 @@ for name, model in models.items():
     safe = name.lower().replace(' ', '_')
     joblib.dump(pipe, os.path.join(candidates_dir, f'{safe}_raw.pkl'))
 
-    # Calibrate using internal 5-fold CV (works with ALL sklearn versions)
-    calibrated = CalibratedClassifierCV(pipe, method='isotonic', cv=5)
-    calibrated.fit(X_train, y_train)  # Uses train; the internal CV handles calibration
+    try:
+        calibrated = CalibratedClassifierCV(pipe, method='isotonic', cv=5)
+        calibrated.fit(X_train, y_train)
+        print(f'  Calibrated {name} with isotonic regression')
+    except Exception as e:
+        print(f'  WARNING: Calibration failed for {name}: {str(e)[:80]}')
+        print(f'  Falling back to uncalibrated pipeline')
+        calibrated = pipe
     joblib.dump(calibrated, os.path.join(candidates_dir, f'{safe}_calibrated.pkl'))
 
     val_proba = calibrated.predict_proba(X_val)[:, 1]
