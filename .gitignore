@@ -1,0 +1,13 @@
+﻿venv/
+__pycache__/
+*.pyc
+.env
+.streamlit/secrets.toml
+models/*.pkl
+models/candidates/
+models/model_pipeline.pkl
+models/production_model.pkl
+reports/*.pkl
+reports/*.npy
+reports/X_test.csv
+reports/y_test.csv

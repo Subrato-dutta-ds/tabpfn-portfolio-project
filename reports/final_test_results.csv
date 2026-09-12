@@ -1,0 +1,2 @@
+Model,Threshold_F1,Test_F1,Test_PR_AUC,Test_ROC_AUC,Test_Brier,Precision@20%,Lift@20%,Expected_Profit@20%
+XGBoost,0.25,0.5206,0.4793,0.8091,0.0754,0.3704,3.29,1085212.0
