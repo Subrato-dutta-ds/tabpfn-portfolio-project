@@ -1,4 +1,4 @@
-﻿import streamlit as st
+import streamlit as st
 import requests, os, json
 import pandas as pd
 import numpy as np
@@ -98,6 +98,6 @@ if submitted:
         st.pyplot(fig)
         plt.close()
         st.caption('↑ factors push probability UP, ↓ factors push it DOWN')
-        st.caption('SHAP explains the underlying base estimator; displayed probability is calibrated.')
+        st.caption('SHAP — Base XGBoost Explanation. This explains the underlying base estimator. Displayed probability is the calibrated output, which may differ slightly.')
     except Exception as e:
         st.info(f'SHAP unavailable: {e}')

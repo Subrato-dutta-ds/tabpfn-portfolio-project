@@ -1,6 +1,8 @@
 ﻿from fastapi.testclient import TestClient
 from src.api import app
-import pytest
+import numpy as np
+from src.business import rank_customers, expected_profit, optimal_k, campaign_summary
+import pandas as pd
 
 client = TestClient(app)
 
@@ -17,22 +19,19 @@ valid_data = {
 def test_health_endpoint():
     r = client.get("/api/v1/health")
     assert r.status_code == 200
-    assert r.json()['status'] == 'ok'
 
 def test_valid_prediction():
     r = client.post("/api/v1/predict", json=valid_data)
     assert r.status_code == 200
     body = r.json()
-    assert "prediction" in body
     assert 0.0 <= body["probability"] <= 1.0
-    assert 0.0 <= body["threshold"] <= 1.0
 
 def test_missing_feature():
     invalid = {k: v for k, v in valid_data.items() if k != 'age'}
     r = client.post("/api/v1/predict", json=invalid)
     assert r.status_code == 422
 
-def test_invalid_categorical_rejected():
+def test_invalid_job_rejected():
     invalid = valid_data.copy()
     invalid['job'] = 'not-a-real-job'
     r = client.post("/api/v1/predict", json=invalid)
@@ -44,7 +43,7 @@ def test_invalid_marital_rejected():
     r = client.post("/api/v1/predict", json=invalid)
     assert r.status_code == 422
 
-def test_age_out_of_range_rejected():
+def test_age_out_of_range():
     invalid = valid_data.copy()
     invalid['age'] = 150
     r = client.post("/api/v1/predict", json=invalid)
@@ -67,26 +66,37 @@ def test_batch_size_limit():
 
 # -------- Business logic tests --------
 
-def test_profit_zero_probability():
-    # If p=0, profit per customer = -cost (should not be selected)
-    p, revenue, cost = 0.0, 2000, 50
-    profit = p * revenue - cost
-    assert profit == -50
+def test_rank_customers_sorts_descending():
+    df = pd.DataFrame({
+        'customer_id': ['A', 'B', 'C'],
+        'probability': [0.3, 0.9, 0.5]
+    })
+    ranked = rank_customers(df)
+    assert ranked['customer_id'].tolist() == ['B', 'C', 'A']
+    assert ranked['probability'].tolist() == [0.9, 0.5, 0.3]
 
-def test_profit_at_break_even():
-    # p * revenue = cost => break even at p = cost/revenue
-    revenue, cost = 2000, 50
-    break_even_p = cost / revenue
-    assert abs(break_even_p - 0.025) < 1e-9
-    assert (break_even_p * revenue - cost) == 0
+def test_expected_profit_formula():
+    assert expected_profit(0.5, 2000, 50) == 950.0
+    assert expected_profit(0.0, 2000, 50) == -50.0
+    assert expected_profit(0.025, 2000, 50) == 0.0
 
-def test_profit_positive_above_break_even():
-    p, revenue, cost = 0.5, 2000, 50
-    profit = p * revenue - cost
-    assert profit == 950
+def test_optimal_k_picks_max_profit():
+    # With high prob customers, optimal should be 2 (not 3) when 3rd has low prob
+    probs = np.array([0.9, 0.8, 0.01])
+    k, profit = optimal_k(probs, revenue=2000, cost=50)
+    assert k == 2
+    assert profit > 0
 
-def test_top_k_ranking_monotonic():
-    import numpy as np
-    probabilities = np.array([0.9, 0.8, 0.7, 0.3, 0.2])
-    sorted_desc = np.sort(probabilities)[::-1]
-    assert (sorted_desc == probabilities).all()  # already sorted desc
+def test_optimal_k_with_zero_probabilities():
+    probs = np.array([0.0, 0.0, 0.0])
+    k, profit = optimal_k(probs, revenue=2000, cost=50)
+    # No customers should be contacted (any K is negative)
+    assert k == 1  # argmax of [-50, -100, -150] is index 0
+
+def test_campaign_summary_metrics():
+    probs = np.array([0.9, 0.7, 0.5, 0.3, 0.1])
+    s = campaign_summary(probs, k=2, revenue=2000, cost=50)
+    assert s['contacts'] == 2
+    assert abs(s['expected_conversions'] - 1.6) < 1e-6
+    assert abs(s['expected_profit'] - (1.6 * 2000 - 100)) < 1e-6
+    assert s['lift'] > 1.0

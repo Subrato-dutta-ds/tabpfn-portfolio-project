@@ -1,9 +1,10 @@
-import streamlit as st
+﻿import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
 import os
 import json
+from src.business import rank_customers, optimal_k, campaign_summary
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 st.set_page_config(page_title="Campaign Optimizer", page_icon="💰", layout="wide")
@@ -24,7 +25,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("💰 Campaign Optimizer — Expected-Profit Optimal K")
-st.caption("Computes the expected-profit-optimal number of contacts by scanning all K from 1 to N.")
+st.caption("Ranks customers by calibrated probability, then finds K* that maximizes expected profit.")
 
 production = joblib.load(os.path.join(BASE_DIR, 'models', 'production_model.pkl'))
 with open(os.path.join(BASE_DIR, 'models', 'model_metadata.json')) as f:
@@ -43,79 +44,60 @@ with st.spinner("Scoring customers..."):
     proba = production.predict_proba(features)[:, 1]
 
 scored = pd.DataFrame({'customer_id': customer_ids, 'probability': proba})
-scored = scored.sort_values('probability', ascending=False).reset_index(drop=True)
+scored = rank_customers(scored)
 scored['rank'] = range(1, len(scored) + 1)
 
-st.sidebar.header("💼 Budget & Economics (₹)")
-revenue = st.sidebar.number_input("Revenue per subscription (₹)", 100, 100000, int(metadata.get('revenue_per_subscription', 2000)), 100)
-cost = st.sidebar.number_input("Cost per contact (₹)", 1, 5000, int(metadata.get('cost_per_contact', 50)), 5)
-
-# Exact top-K optimal: scan all K from 1 to N
-cumulative_proba = scored['probability'].cumsum().values
-k_values = np.arange(1, len(scored) + 1)
-profit_curve = cumulative_proba * revenue - k_values * cost
-
-best_k = int(np.argmax(profit_curve)) + 1
-best_profit = float(profit_curve[best_k - 1])
-
-# Also show a user-selected K
+st.sidebar.header("Budget & Economics (Rs)")
+revenue = st.sidebar.number_input("Revenue per subscription (Rs)", 100, 100000, int(metadata.get('revenue_per_subscription', 2000)), 100)
+cost = st.sidebar.number_input("Cost per contact (Rs)", 1, 5000, int(metadata.get('cost_per_contact', 50)), 5)
 st.sidebar.markdown("---")
-user_k = st.sidebar.slider("Manual K (customers to contact)", 1, len(scored), best_k, 50)
+user_k = st.sidebar.slider("Manual K (contacts)", 1, len(scored), 100, 50)
 
-# Manual metrics
-top_user = scored.head(user_k)
-profit_user = float((top_user['probability'].sum() * revenue) - user_k * cost)
-conversions_user = float(top_user['probability'].sum())
-baseline_rate = proba.mean()
-lift_user = (top_user['probability'].mean() / baseline_rate) if baseline_rate > 0 else 0
+best_k, best_profit = optimal_k(scored['probability'].values, revenue, cost)
+summary_best = campaign_summary(scored['probability'].values, best_k, revenue, cost)
+summary_user = campaign_summary(scored['probability'].values, user_k, revenue, cost)
 
-# Optimal metrics
-top_best = scored.head(best_k)
-conversions_best = float(top_best['probability'].sum())
-baseline_rate = proba.mean()
-lift_best = (top_best['probability'].mean() / baseline_rate) if baseline_rate > 0 else 0
-
-st.markdown(f"### 🎯 Expected-Profit Optimal: contact **{best_k:,}** customers for max profit **₹{best_profit:,.0f}**")
+st.markdown(f"### Expected-Profit Optimal: contact **{best_k:,}** customers for max profit **Rs {best_profit:,.0f}**")
 
 c1, c2, c3, c4 = st.columns(4)
 for col, label, val in zip(
     [c1, c2, c3, c4],
-    ["Contacts (Optimal K)", "Expected Conversions", "Expected Profit", "Lift"],
-    [f"{best_k:,}", f"{conversions_best:.0f}", f"₹{best_profit:,.0f}", f"{lift_best:.2f}x"]
+    ["Optimal K", "Expected Conversions", "Expected Profit", "Lift"],
+    [f"{summary_best['contacts']:,}", f"{summary_best['expected_conversions']:.0f}",
+     f"Rs {summary_best['expected_profit']:,.0f}", f"{summary_best['lift']:.2f}x"]
 ):
     with col:
         st.markdown(f'<div class="metric-card"><div class="metric-label">{label}</div><div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
 
 st.markdown(f"""
-> ⚠️ **Note:** Exact optimum computed by scanning all K=1..{len(scored):,}.  
-> Model-estimated expected values using calibrated probabilities.  
-> Revenue (₹{revenue:,}) and cost (₹{cost:,}) are user assumptions.  
-> The optimum is: `K* = argmax_K [ R * sum(top_K probs) - K * C ]`
+> **Note:** Optimal K computed by scanning K=1..{len(scored):,}: `K* = argmax_K [ R * sum(top_K p_i) - K * C ]`.  
+> Uses calibrated probabilities. Revenue (Rs {revenue:,}) and cost (Rs {cost:,}) are user-defined assumptions.  
+> **This is expected-profit-optimal, not universally optimal.**
 """)
 
 st.markdown("---")
-st.subheader(f"📊 Your Selection: K = {user_k:,}")
+st.subheader(f"Your Selection: K = {user_k:,}")
 c1, c2, c3, c4 = st.columns(4)
 for col, label, val in zip(
     [c1, c2, c3, c4],
     ["Contacts", "Expected Conversions", "Expected Profit", "Lift"],
-    [f"{user_k:,}", f"{conversions_user:.0f}", f"₹{profit_user:,.0f}", f"{lift_user:.2f}x"]
+    [f"{summary_user['contacts']:,}", f"{summary_user['expected_conversions']:.0f}",
+     f"Rs {summary_user['expected_profit']:,.0f}", f"{summary_user['lift']:.2f}x"]
 ):
     with col:
         st.markdown(f'<div class="metric-card"><div class="metric-label">{label}</div><div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
 
 st.markdown("---")
-st.subheader("📈 Profit Curve (all K)")
-plot_df = pd.DataFrame({
-    'K': k_values[::max(1, len(k_values)//200)],
-    'Expected_Profit': profit_curve[::max(1, len(k_values)//200)]
-})
-st.line_chart(plot_df.set_index('K'))
-st.caption(f"Peak at K={best_k:,} (₹{best_profit:,.0f})")
+st.subheader("Profit Curve (all K)")
+k_values = np.arange(1, len(scored) + 1)
+cum = scored['probability'].cumsum().values
+profits = cum * revenue - k_values * cost
+step = max(1, len(k_values) // 200)
+st.line_chart(pd.DataFrame({'K': k_values[::step], 'Profit': profits[::step]}).set_index('K'))
 
 st.markdown("---")
-st.subheader("🏆 Top 100 Ranked Customers")
-st.dataframe(scored.head(100).merge(customers[['customer_id', 'age', 'job']], on='customer_id', how='left'), use_container_width=True, hide_index=True)
-
+st.subheader("Top 100 Ranked Customers")
+st.dataframe(scored.head(100).merge(customers[['customer_id', 'age', 'job']], on='customer_id', how='left'),
+             use_container_width=True, hide_index=True)
 csv = scored.merge(customers, on='customer_id', how='left').to_csv(index=False).encode('utf-8')
-st.download_button('📥 Download Campaign List (CSV)', csv, 'campaign_contacts.csv', 'text/csv')
+st.download_button('Download Campaign List (CSV)', csv, 'campaign_contacts.csv', 'text/csv')
