@@ -107,6 +107,26 @@ comparison_df.to_csv(os.path.join(reports_dir, 'model_comparison.csv'), index=Fa
 X_test.to_csv(os.path.join(reports_dir, 'X_test.csv'), index=False)
 pd.DataFrame({'y': y_test}).to_csv(os.path.join(reports_dir, 'y_test.csv'), index=False)
 
+import subprocess
+from datetime import datetime
+
+try:
+    git_sha = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'],
+                                       cwd=BASE_DIR, stderr=subprocess.DEVNULL).decode().strip()
+except Exception:
+    git_sha = 'unknown'
+
+try:
+    import sklearn, xgboost, pandas, numpy
+    env_versions = {
+        'scikit-learn': sklearn.__version__,
+        'xgboost': xgboost.__version__,
+        'pandas': pandas.__version__,
+        'numpy': numpy.__version__,
+    }
+except Exception:
+    env_versions = {}
+
 with open(os.path.join(BASE_DIR, 'models', 'model_metadata.json'), 'w') as f:
     json.dump({
         'model': best_name,
@@ -116,7 +136,15 @@ with open(os.path.join(BASE_DIR, 'models', 'model_metadata.json'), 'w') as f:
         'revenue_per_subscription': REVENUE_PER_SUBSCRIPTION,
         'cost_per_contact': COST_PER_CONTACT,
         'calibration': 'isotonic (5-fold CV)',
-        'model_version': '1.0.0',
+        'model_version': git_sha,
+        'git_sha': git_sha,
+        'trained_at': datetime.utcnow().isoformat() + 'Z',
+        'feature_schema_version': '1.0',
+        'training_rows': int(len(X_train)),
+        'validation_rows': int(len(X_val)),
+        'test_rows': int(len(X_test)),
+        'feature_count': int(X_train.shape[1]),
+        'env_versions': env_versions,
     }, f, indent=4)
 
 print(f'\nWinner: {best_name} (Val PR-AUC={best_score:.4f})')
