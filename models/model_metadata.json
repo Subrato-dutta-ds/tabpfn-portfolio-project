@@ -11,5 +11,8 @@
     "test_pr_auc": 0.47933638222333497,
     "test_roc_auc": 0.8090977905797445,
     "test_brier": 0.07535245035641122,
-    "test_lift_at_20": 3.2878352490421454
+    "test_lift_at_20": 3.2878352490421454,
+    "git_sha": "351b15d",
+    "trained_at": "2026-09-15T06:52:40.025174Z",
+    "feature_schema_version": "1.0"
 }

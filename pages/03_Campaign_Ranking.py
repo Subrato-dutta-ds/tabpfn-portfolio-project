@@ -1,4 +1,4 @@
-﻿import streamlit as st
+import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
@@ -23,8 +23,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("💰 Campaign Optimizer — Exact Optimal K")
-st.caption("Computes the mathematically optimal number of contacts by scanning all K from 1 to N.")
+st.title("💰 Campaign Optimizer — Expected-Profit Optimal K")
+st.caption("Computes the expected-profit-optimal number of contacts by scanning all K from 1 to N.")
 
 production = joblib.load(os.path.join(BASE_DIR, 'models', 'production_model.pkl'))
 with open(os.path.join(BASE_DIR, 'models', 'model_metadata.json')) as f:
@@ -75,7 +75,7 @@ conversions_best = float(top_best['probability'].sum())
 baseline_rate = proba.mean()
 lift_best = (top_best['probability'].mean() / baseline_rate) if baseline_rate > 0 else 0
 
-st.markdown(f"### 🎯 Exact Optimal: contact **{best_k:,}** customers for max profit **₹{best_profit:,.0f}**")
+st.markdown(f"### 🎯 Expected-Profit Optimal: contact **{best_k:,}** customers for max profit **₹{best_profit:,.0f}**")
 
 c1, c2, c3, c4 = st.columns(4)
 for col, label, val in zip(

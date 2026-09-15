@@ -1,0 +1,4 @@
+Method,Brier,PR_AUC
+Raw,0.0782,0.4598
+Sigmoid (Platt),0.0788,0.466
+Isotonic,0.0773,0.4679
