@@ -1,8 +1,11 @@
-﻿import os, joblib, json
+import os, joblib, json, logging
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, field_validator
 from typing import List
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 pipeline = joblib.load(os.path.join(BASE_DIR, 'models', 'production_model.pkl'))
@@ -95,8 +98,9 @@ def predict(data: CustomerFeatures):
         probability = float(pipeline.predict_proba(df)[0, 1])
         prediction = int(probability >= best_threshold)
         return PredictionResponse(prediction=prediction, probability=probability, threshold=float(best_threshold))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Model error: {str(e)[:100]}')
+    except Exception:
+        logger.exception('Prediction failed')
+        raise HTTPException(status_code=500, detail='Prediction service failed.')
 
 @app.post('/api/v1/predict-batch', response_model=BatchPredictionResponse)
 def predict_batch(batch: BatchFeatures):
@@ -109,5 +113,6 @@ def predict_batch(batch: BatchFeatures):
         results = [PredictionResponse(prediction=p, probability=prob, threshold=float(best_threshold))
                    for p, prob in zip(predictions, probabilities)]
         return BatchPredictionResponse(results=results, total=len(results))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Batch error: {str(e)[:100]}')
+    except Exception:
+        logger.exception('Batch prediction failed')
+        raise HTTPException(status_code=500, detail='Batch prediction service failed.')

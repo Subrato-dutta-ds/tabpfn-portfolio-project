@@ -1,6 +1,4 @@
-﻿version: '3.8'
-
-services:
+﻿services:
   fastapi:
     build: .
     command: uvicorn src.api:app --host 0.0.0.0 --port 8000
@@ -8,6 +6,7 @@ services:
       - "8000:8000"
     volumes:
       - ./models:/app/models
+      - ./reports:/app/reports
 
   streamlit:
     build: .

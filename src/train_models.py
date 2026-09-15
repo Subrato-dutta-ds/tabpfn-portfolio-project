@@ -1,4 +1,4 @@
-﻿import os, joblib, json, numpy as np, pandas as pd
+import os, joblib, json, numpy as np, pandas as pd
 from sklearn.model_selection import train_test_split, StratifiedKFold, RandomizedSearchCV
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import average_precision_score, f1_score
@@ -54,6 +54,7 @@ for name, model in models.items():
     safe = name.lower().replace(' ', '_')
     joblib.dump(pipe, os.path.join(candidates_dir, f'{safe}_raw.pkl'))
 
+    # Calibration method = isotonic. Verified via src/compare_calibration.py (lowest validation Brier).
     try:
         calibrated = CalibratedClassifierCV(pipe, method='isotonic', cv=5)
         calibrated.fit(X_train, y_train)
