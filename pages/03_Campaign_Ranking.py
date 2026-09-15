@@ -1,4 +1,4 @@
-﻿import streamlit as st
+import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
@@ -66,7 +66,7 @@ else:
 c1, c2, c3, c4 = st.columns(4)
 for col, label, val in zip(
     [c1, c2, c3, c4],
-    ["Optimal K", "Expected Conversions", "Expected Profit", "Lift"],
+    ["Optimal K", "Expected Conversions", "Expected Profit", "Expected Lift"],
     [f"{summary_best['contacts']:,}", f"{summary_best['expected_conversions']:.0f}",
      f"Rs {summary_best['expected_profit']:,.0f}", f"{summary_best['lift']:.2f}x"]
 ):
@@ -76,7 +76,7 @@ for col, label, val in zip(
 st.markdown(f"""
 > **Note:** Optimal K computed by scanning K=0..{len(scored):,}: `K* = argmax_K [ R * sum(top_K p_i) - K * C ]`.  
 > Uses calibrated probabilities. Revenue (Rs {revenue:,}) and cost (Rs {cost:,}) are user-defined.  
-> **This is expected-profit-optimal, not universally optimal.**
+> **This is expected-profit-optimal, not universally optimal.**  `n> **Expected Lift** is computed on the simulated campaign population (probability-based); empirical lift on the held-out test set is reported on the Reports page.
 """)
 
 st.markdown("---")
@@ -84,7 +84,7 @@ st.subheader(f"Your Selection: K = {user_k:,}")
 c1, c2, c3, c4 = st.columns(4)
 for col, label, val in zip(
     [c1, c2, c3, c4],
-    ["Contacts", "Expected Conversions", "Expected Profit", "Lift"],
+    ["Contacts", "Expected Conversions", "Expected Profit", "Expected Lift"],
     [f"{summary_user['contacts']:,}", f"{summary_user['expected_conversions']:.0f}",
      f"Rs {summary_user['expected_profit']:,.0f}", f"{summary_user['lift']:.2f}x"]
 ):

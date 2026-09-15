@@ -1,16 +1,69 @@
-import os, joblib, json, logging
+﻿import os, joblib, json, logging, sys
 import pandas as pd
+from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, field_validator
 from typing import List
 
-logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-pipeline = joblib.load(os.path.join(BASE_DIR, 'models', 'production_model.pkl'))
-with open(os.path.join(BASE_DIR, 'models', 'model_metadata.json')) as f:
-    metadata = json.load(f)
+MODEL_PATH = os.path.join(BASE_DIR, 'models', 'production_model.pkl')
+METADATA_PATH = os.path.join(BASE_DIR, 'models', 'model_metadata.json')
+
+
+def _load_artifacts():
+    """Load model + metadata. Fail fast with a clear, actionable error."""
+    missing = [p for p in (MODEL_PATH, METADATA_PATH) if not os.path.exists(p)]
+    if missing:
+        msg = (
+            "\n"
+            "=" * 70 + "\n"
+            "  ERROR: Model artifact(s) not found.\n"
+            "=" * 70 + "\n"
+            "  Missing files:\n"
+            + "".join(f"    - {p}\n" for p in missing) +
+            "\n"
+            "  The API cannot start without these artifacts.\n\n"
+            "  Fix:\n"
+            "    Run the training pipeline first:\n"
+            "      python src/generate_campaign_data.py\n"
+            "      python src/train_models.py\n"
+            "      python src/evaluate.py\n\n"
+            "  Or, inside Docker:\n"
+            "    docker compose run --rm fastapi python src/train_models.py\n"
+            "    docker compose up\n"
+            + "=" * 70 + "\n"
+        )
+        logger.error(msg)
+        sys.exit(1)
+
+    try:
+        pipeline = joblib.load(MODEL_PATH)
+    except Exception as e:
+        logger.error(f"Failed to load model from {MODEL_PATH}: {e}")
+        sys.exit(1)
+
+    try:
+        with open(METADATA_PATH) as f:
+            meta = json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to load metadata from {METADATA_PATH}: {e}")
+        sys.exit(1)
+
+    required_keys = ['model', 'threshold_f1']
+    missing_keys = [k for k in required_keys if k not in meta]
+    if missing_keys:
+        logger.error(f"Metadata missing required keys: {missing_keys}")
+        sys.exit(1)
+
+    logger.info(f"Loaded model '{meta['model']}' (threshold_f1={meta['threshold_f1']}, "
+                f"git_sha={meta.get('git_sha', 'n/a')})")
+    return pipeline, meta
+
+
+pipeline, metadata = _load_artifacts()
 best_threshold = metadata['threshold_f1']
 
 from src.schema import API_ALIASES, FEATURE_SCHEMA
@@ -23,6 +76,7 @@ CATEGORICAL = FEATURE_SCHEMA['categorical']
 def _numeric_field(col_api):
     ds_name = API_ALIASES.get(col_api, col_api)
     return NUMERIC[ds_name]
+
 
 class CustomerFeatures(BaseModel):
     age: int
@@ -49,37 +103,40 @@ class CustomerFeatures(BaseModel):
                      'contact', 'month', 'day_of_week', 'poutcome')
     @classmethod
     def validate_categorical(cls, v, info):
-        field = info.field_name
-        allowed = CATEGORICAL.get(field)
+        allowed = CATEGORICAL.get(info.field_name)
         if allowed and v not in allowed:
-            raise ValueError(f'{field} must be one of {allowed}')
+            raise ValueError(f'{info.field_name} must be one of {allowed}')
         return v
 
     @field_validator('age', 'campaign', 'pdays', 'previous', 'emp_var_rate',
                      'cons_price_idx', 'cons_conf_idx', 'euribor3m', 'nr_employed')
     @classmethod
     def validate_numeric(cls, v, info):
-        field = info.field_name
-        spec = _numeric_field(field)
+        spec = _numeric_field(info.field_name)
         if not (spec['min'] <= v <= spec['max']):
-            raise ValueError(f'{field} must be between {spec["min"]} and {spec["max"]}')
+            raise ValueError(f'{info.field_name} must be between {spec["min"]} and {spec["max"]}')
         return v
+
 
 class PredictionResponse(BaseModel):
     prediction: int
     probability: float
     threshold: float
 
+
 class BatchFeatures(BaseModel):
     data: List[CustomerFeatures]
+
 
 class BatchPredictionResponse(BaseModel):
     results: List[PredictionResponse]
     total: int
 
+
 def map_to_dataset(data: CustomerFeatures):
     raw = data.model_dump()
     return {API_ALIASES.get(k, k): v for k, v in raw.items()}
+
 
 @app.get('/api/v1/health')
 def health_check():
@@ -89,7 +146,9 @@ def health_check():
         'threshold_f1': float(best_threshold),
         'calibration': metadata.get('calibration', 'none'),
         'model_version': metadata.get('model_version', 'unknown'),
+        'git_sha': metadata.get('git_sha', 'unknown'),
     }
+
 
 @app.post('/api/v1/predict', response_model=PredictionResponse)
 def predict(data: CustomerFeatures):
@@ -101,6 +160,7 @@ def predict(data: CustomerFeatures):
     except Exception:
         logger.exception('Prediction failed')
         raise HTTPException(status_code=500, detail='Prediction service failed.')
+
 
 @app.post('/api/v1/predict-batch', response_model=BatchPredictionResponse)
 def predict_batch(batch: BatchFeatures):
