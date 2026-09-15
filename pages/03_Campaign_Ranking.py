@@ -25,7 +25,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("💰 Campaign Optimizer — Expected-Profit Optimal K")
-st.caption("Ranks customers by calibrated probability, then finds K* that maximizes expected profit.")
+st.caption("Ranks customers by calibrated probability, then finds K* that maximizes expected profit (K=0 allowed).")
 
 production = joblib.load(os.path.join(BASE_DIR, 'models', 'production_model.pkl'))
 with open(os.path.join(BASE_DIR, 'models', 'model_metadata.json')) as f:
@@ -51,13 +51,17 @@ st.sidebar.header("Budget & Economics (Rs)")
 revenue = st.sidebar.number_input("Revenue per subscription (Rs)", 100, 100000, int(metadata.get('revenue_per_subscription', 2000)), 100)
 cost = st.sidebar.number_input("Cost per contact (Rs)", 1, 5000, int(metadata.get('cost_per_contact', 50)), 5)
 st.sidebar.markdown("---")
-user_k = st.sidebar.slider("Manual K (contacts)", 1, len(scored), 100, 50)
+st.sidebar.caption("Manual K — 0 means contact nobody")
+user_k = st.sidebar.slider("Manual K (contacts)", 0, len(scored), min(100, len(scored)), 50)
 
 best_k, best_profit = optimal_k(scored['probability'].values, revenue, cost)
 summary_best = campaign_summary(scored['probability'].values, best_k, revenue, cost)
 summary_user = campaign_summary(scored['probability'].values, user_k, revenue, cost)
 
-st.markdown(f"### Expected-Profit Optimal: contact **{best_k:,}** customers for max profit **Rs {best_profit:,.0f}**")
+if best_k == 0:
+    st.warning(f"⚠️ Expected-Profit Optimal: **contact nobody** (K*=0). Every contact has negative expected profit at Rs {revenue:,} revenue / Rs {cost:,} cost.")
+else:
+    st.markdown(f"### Expected-Profit Optimal: contact **{best_k:,}** customers for max profit **Rs {best_profit:,.0f}**")
 
 c1, c2, c3, c4 = st.columns(4)
 for col, label, val in zip(
@@ -70,8 +74,8 @@ for col, label, val in zip(
         st.markdown(f'<div class="metric-card"><div class="metric-label">{label}</div><div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
 
 st.markdown(f"""
-> **Note:** Optimal K computed by scanning K=1..{len(scored):,}: `K* = argmax_K [ R * sum(top_K p_i) - K * C ]`.  
-> Uses calibrated probabilities. Revenue (Rs {revenue:,}) and cost (Rs {cost:,}) are user-defined assumptions.  
+> **Note:** Optimal K computed by scanning K=0..{len(scored):,}: `K* = argmax_K [ R * sum(top_K p_i) - K * C ]`.  
+> Uses calibrated probabilities. Revenue (Rs {revenue:,}) and cost (Rs {cost:,}) are user-defined.  
 > **This is expected-profit-optimal, not universally optimal.**
 """)
 
@@ -88,12 +92,13 @@ for col, label, val in zip(
         st.markdown(f'<div class="metric-card"><div class="metric-label">{label}</div><div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
 
 st.markdown("---")
-st.subheader("Profit Curve (all K)")
-k_values = np.arange(1, len(scored) + 1)
+st.subheader("Profit Curve (K=0 to N)")
+k_values = np.arange(0, len(scored) + 1)
 cum = scored['probability'].cumsum().values
-profits = cum * revenue - k_values * cost
+profits = np.concatenate([[0.0], cum * revenue - np.arange(1, len(scored) + 1) * cost])
 step = max(1, len(k_values) // 200)
-st.line_chart(pd.DataFrame({'K': k_values[::step], 'Profit': profits[::step]}).set_index('K'))
+st.line_chart(pd.DataFrame({'K': k_values[::step], 'Profit (Rs)': profits[::step]}).set_index('K'))
+st.caption(f"Peak at K={best_k:,} (Rs {best_profit:,.0f})")
 
 st.markdown("---")
 st.subheader("Top 100 Ranked Customers")
