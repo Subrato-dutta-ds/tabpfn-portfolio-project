@@ -21,15 +21,19 @@ jobs:
         run: PYTHONPATH=. python src/train_models.py
       - name: Evaluate
         run: PYTHONPATH=. python src/evaluate.py
-      - name: Compare calibration
-        run: PYTHONPATH=. python src/compare_calibration.py
+      - name: Uplift modeling
+        run: PYTHONPATH=. python src/train_uplift.py
+      - name: Evaluate uplift
+        run: PYTHONPATH=. python src/evaluate_uplift.py
+      - name: Promotion gate
+        run: PYTHONPATH=. python src/promote_model.py
       - name: Generate SHAP
         run: PYTHONPATH=. python src/explainability.py
       - uses: actions/upload-artifact@v4
         with:
           name: model-artifacts
           path: |
-            models/production_model.pkl
-            models/model_metadata.json
+            models/production_model_active.pkl
+            models/model_metadata_active.json
             reports/*.csv
             reports/*.png

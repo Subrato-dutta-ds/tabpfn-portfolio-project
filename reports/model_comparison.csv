@@ -1,4 +1,4 @@
 Model,Val_PR_AUC,Val_Brier,Val_F1_Best,Threshold_F1,Threshold_Profit,Val_Profit
-XGBoost,0.4679,0.0773,0.5012,0.25,0.02,1453966.97
-Logistic Regression,0.439,0.0789,0.4902,0.26,0.02,1461365.26
-Random Forest,0.4301,0.0806,0.466,0.23,0.02,1462442.56
+XGBoost,0.4679,0.0773,0.5012,0.25,0.025,1454180.61
+Logistic Regression,0.439,0.0789,0.4902,0.26,0.025,1461389.14
+Random Forest,0.4301,0.0806,0.466,0.23,0.025,1462653.48

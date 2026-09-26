@@ -1,4 +1,4 @@
-﻿import os, joblib, json, subprocess, numpy as np, pandas as pd
+import os, joblib, json, subprocess, numpy as np, pandas as pd
 from datetime import datetime
 import mlflow
 import mlflow.sklearn
@@ -87,12 +87,15 @@ for name, model in models.items():
         if f1 > best_f1:
             best_f1, thresh_f1 = f1, t
 
+    break_even = COST_PER_CONTACT / REVENUE_PER_SUBSCRIPTION
     profit_per_thresh = []
-    for t in np.arange(0.01, 0.99, 0.01):
+    for t in np.arange(0.005, 0.99, 0.005):
         sel = val_proba >= t
         ep = float(np.sum(val_proba[sel] * REVENUE_PER_SUBSCRIPTION - COST_PER_CONTACT)) if sel.sum() else 0
         profit_per_thresh.append((t, ep))
     thresh_profit, best_profit = max(profit_per_thresh, key=lambda x: x[1])
+    thresh_profit = max(thresh_profit, break_even)
+    best_profit = float(np.sum(val_proba[val_proba >= thresh_profit] * REVENUE_PER_SUBSCRIPTION - COST_PER_CONTACT))
 
     # --- MLflow logging per model ---
     with mlflow.start_run(run_name=name):

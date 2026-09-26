@@ -1,4 +1,4 @@
-﻿import os, joblib, json, logging, sys
+import os, joblib, json, logging, sys
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
@@ -10,8 +10,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MODEL_PATH = os.path.join(BASE_DIR, 'models', 'production_model.pkl')
-METADATA_PATH = os.path.join(BASE_DIR, 'models', 'model_metadata.json')
+MODEL_PATH = os.path.join(BASE_DIR, 'models', 'production_model_active.pkl')
+if not os.path.exists(MODEL_PATH):
+    MODEL_PATH = os.path.join(BASE_DIR, 'models', 'production_model.pkl')
+METADATA_PATH = os.path.join(BASE_DIR, 'models', 'model_metadata_active.json')
+if not os.path.exists(METADATA_PATH):
+    METADATA_PATH = os.path.join(BASE_DIR, 'models', 'model_metadata.json')
 
 LOG_DIR = Path(BASE_DIR) / 'logs'
 LOG_DIR.mkdir(exist_ok=True)
