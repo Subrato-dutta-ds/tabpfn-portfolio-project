@@ -1,6 +1,7 @@
 ﻿import os, joblib, json, logging, sys
 import pandas as pd
 from pathlib import Path
+from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, field_validator
 from typing import List
@@ -12,54 +13,30 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL_PATH = os.path.join(BASE_DIR, 'models', 'production_model.pkl')
 METADATA_PATH = os.path.join(BASE_DIR, 'models', 'model_metadata.json')
 
+LOG_DIR = Path(BASE_DIR) / 'logs'
+LOG_DIR.mkdir(exist_ok=True)
+PREDICTION_LOG = LOG_DIR / 'predictions.jsonl'
+
+
+def _log_prediction(features, probability, prediction):
+    try:
+        entry = {'timestamp': datetime.utcnow().isoformat() + 'Z',
+                 'features': features, 'probability': probability, 'prediction': prediction}
+        with open(PREDICTION_LOG, 'a') as f:
+            f.write(json.dumps(entry) + '\n')
+    except Exception:
+        logger.warning("Failed to log prediction")
+
 
 def _load_artifacts():
-    """Load model + metadata. Fail fast with a clear, actionable error."""
     missing = [p for p in (MODEL_PATH, METADATA_PATH) if not os.path.exists(p)]
     if missing:
-        msg = (
-            "\n"
-            "=" * 70 + "\n"
-            "  ERROR: Model artifact(s) not found.\n"
-            "=" * 70 + "\n"
-            "  Missing files:\n"
-            + "".join(f"    - {p}\n" for p in missing) +
-            "\n"
-            "  The API cannot start without these artifacts.\n\n"
-            "  Fix:\n"
-            "    Run the training pipeline first:\n"
-            "      python src/generate_campaign_data.py\n"
-            "      python src/train_models.py\n"
-            "      python src/evaluate.py\n\n"
-            "  Or, inside Docker:\n"
-            "    docker compose run --rm fastapi python src/train_models.py\n"
-            "    docker compose up\n"
-            + "=" * 70 + "\n"
-        )
-        logger.error(msg)
+        logger.error("Missing artifacts: " + str(missing))
+        logger.error("Run: python src/generate_campaign_data.py && python src/train_models.py")
         sys.exit(1)
-
-    try:
-        pipeline = joblib.load(MODEL_PATH)
-    except Exception as e:
-        logger.error(f"Failed to load model from {MODEL_PATH}: {e}")
-        sys.exit(1)
-
-    try:
-        with open(METADATA_PATH) as f:
-            meta = json.load(f)
-    except Exception as e:
-        logger.error(f"Failed to load metadata from {METADATA_PATH}: {e}")
-        sys.exit(1)
-
-    required_keys = ['model', 'threshold_f1']
-    missing_keys = [k for k in required_keys if k not in meta]
-    if missing_keys:
-        logger.error(f"Metadata missing required keys: {missing_keys}")
-        sys.exit(1)
-
-    logger.info(f"Loaded model '{meta['model']}' (threshold_f1={meta['threshold_f1']}, "
-                f"git_sha={meta.get('git_sha', 'n/a')})")
+    pipeline = joblib.load(MODEL_PATH)
+    with open(METADATA_PATH) as f:
+        meta = json.load(f)
     return pipeline, meta
 
 
@@ -69,13 +46,8 @@ best_threshold = metadata['threshold_f1']
 from src.schema import API_ALIASES, FEATURE_SCHEMA
 
 app = FastAPI(title='Bank Marketing Campaign API', version='1.0.0')
-
 NUMERIC = FEATURE_SCHEMA['numerical']
 CATEGORICAL = FEATURE_SCHEMA['categorical']
-
-def _numeric_field(col_api):
-    ds_name = API_ALIASES.get(col_api, col_api)
-    return NUMERIC[ds_name]
 
 
 class CustomerFeatures(BaseModel):
@@ -102,7 +74,7 @@ class CustomerFeatures(BaseModel):
     @field_validator('job', 'marital', 'education', 'default', 'housing', 'loan',
                      'contact', 'month', 'day_of_week', 'poutcome')
     @classmethod
-    def validate_categorical(cls, v, info):
+    def validate_cat(cls, v, info):
         allowed = CATEGORICAL.get(info.field_name)
         if allowed and v not in allowed:
             raise ValueError(f'{info.field_name} must be one of {allowed}')
@@ -111,10 +83,10 @@ class CustomerFeatures(BaseModel):
     @field_validator('age', 'campaign', 'pdays', 'previous', 'emp_var_rate',
                      'cons_price_idx', 'cons_conf_idx', 'euribor3m', 'nr_employed')
     @classmethod
-    def validate_numeric(cls, v, info):
-        spec = _numeric_field(info.field_name)
+    def validate_num(cls, v, info):
+        spec = NUMERIC[API_ALIASES.get(info.field_name, info.field_name)]
         if not (spec['min'] <= v <= spec['max']):
-            raise ValueError(f'{info.field_name} must be between {spec["min"]} and {spec["max"]}')
+            raise ValueError(f'{info.field_name} out of range')
         return v
 
 
@@ -133,21 +105,17 @@ class BatchPredictionResponse(BaseModel):
     total: int
 
 
-def map_to_dataset(data: CustomerFeatures):
+def map_to_dataset(data):
     raw = data.model_dump()
     return {API_ALIASES.get(k, k): v for k, v in raw.items()}
 
 
 @app.get('/api/v1/health')
-def health_check():
-    return {
-        'status': 'ok',
-        'model': metadata['model'],
-        'threshold_f1': float(best_threshold),
-        'calibration': metadata.get('calibration', 'none'),
-        'model_version': metadata.get('model_version', 'unknown'),
-        'git_sha': metadata.get('git_sha', 'unknown'),
-    }
+def health():
+    return {'status': 'ok', 'model': metadata['model'],
+            'threshold_f1': float(best_threshold),
+            'calibration': metadata.get('calibration', 'none'),
+            'git_sha': metadata.get('git_sha', 'unknown')}
 
 
 @app.post('/api/v1/predict', response_model=PredictionResponse)
@@ -156,7 +124,9 @@ def predict(data: CustomerFeatures):
         df = pd.DataFrame([map_to_dataset(data)])
         probability = float(pipeline.predict_proba(df)[0, 1])
         prediction = int(probability >= best_threshold)
-        return PredictionResponse(prediction=prediction, probability=probability, threshold=float(best_threshold))
+        _log_prediction(map_to_dataset(data), probability, prediction)
+        return PredictionResponse(prediction=prediction, probability=probability,
+                                  threshold=float(best_threshold))
     except Exception:
         logger.exception('Prediction failed')
         raise HTTPException(status_code=500, detail='Prediction service failed.')
@@ -167,12 +137,14 @@ def predict_batch(batch: BatchFeatures):
     if len(batch.data) > 5000:
         raise HTTPException(status_code=413, detail='Maximum batch size is 5000')
     try:
-        df = pd.DataFrame([map_to_dataset(item) for item in batch.data])
-        probabilities = [float(p) for p in pipeline.predict_proba(df)[:, 1]]
-        predictions = [int(p >= best_threshold) for p in probabilities]
-        results = [PredictionResponse(prediction=p, probability=prob, threshold=float(best_threshold))
-                   for p, prob in zip(predictions, probabilities)]
-        return BatchPredictionResponse(results=results, total=len(results))
+        records = [map_to_dataset(i) for i in batch.data]
+        df = pd.DataFrame(records)
+        probs = [float(p) for p in pipeline.predict_proba(df)[:, 1]]
+        preds = [int(p >= best_threshold) for p in probs]
+        return BatchPredictionResponse(
+            results=[PredictionResponse(prediction=p, probability=pr, threshold=float(best_threshold))
+                     for p, pr in zip(preds, probs)],
+            total=len(preds))
     except Exception:
-        logger.exception('Batch prediction failed')
+        logger.exception('Batch failed')
         raise HTTPException(status_code=500, detail='Batch prediction service failed.')

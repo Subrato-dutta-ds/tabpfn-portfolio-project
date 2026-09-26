@@ -14,3 +14,5 @@ reports/y_test.csv
 mlruns/
 logs/
 *.db
+mlruns/
+logs/
