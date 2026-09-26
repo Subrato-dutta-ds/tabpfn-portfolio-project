@@ -7,6 +7,9 @@ joblib==1.5.3
 shap==0.51.0
 matplotlib==3.9.2
 
+# Experiment tracking
+mlflow==2.16.2
+
 # API + UI
 fastapi==0.111.0
 uvicorn>=0.27.0

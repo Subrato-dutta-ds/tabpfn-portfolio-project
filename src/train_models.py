@@ -1,4 +1,7 @@
-import os, joblib, json, numpy as np, pandas as pd
+﻿import os, joblib, json, subprocess, numpy as np, pandas as pd
+from datetime import datetime
+import mlflow
+import mlflow.sklearn
 from sklearn.model_selection import train_test_split, StratifiedKFold, RandomizedSearchCV
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import average_precision_score, f1_score
@@ -8,6 +11,12 @@ from sklearn.pipeline import Pipeline
 from src.data_loader import load_data
 from src.config import BASE_DIR, get_models, get_param_grids
 from src.schema import RANDOM_STATE, TARGET_COLUMN, DROPPED_COLUMNS, REVENUE_PER_SUBSCRIPTION, COST_PER_CONTACT
+
+# --- MLflow setup ---
+MLRUNS_DIR = os.path.join(BASE_DIR, 'mlruns')
+os.makedirs(MLRUNS_DIR, exist_ok=True)
+mlflow.set_tracking_uri(f"file:{MLRUNS_DIR}")
+mlflow.set_experiment("bank_marketing_campaign")
 
 candidates_dir = os.path.join(BASE_DIR, 'models', 'candidates')
 os.makedirs(candidates_dir, exist_ok=True)
@@ -38,35 +47,39 @@ comparison = []
 best_score = -1
 best_name = None
 best_thresh = 0.5
-best_calibrated = None
 best_profit_thresh = 0.5
+best_calibrated = None
 
 for name, model in models.items():
     print(f'Tuning {name}...')
     pipe = Pipeline([('preprocessor', preprocessor), ('classifier', model)])
     if name in grids:
-        search = RandomizedSearchCV(pipe, grids[name], n_iter=3, cv=cv, scoring='average_precision', n_jobs=-1, random_state=RANDOM_STATE)
+        search = RandomizedSearchCV(pipe, grids[name], n_iter=3, cv=cv,
+                                    scoring='average_precision', n_jobs=-1,
+                                    random_state=RANDOM_STATE)
         search.fit(X_train, y_train)
         pipe = search.best_estimator_
+        best_params = search.best_params_
     else:
         pipe.fit(X_train, y_train)
+        best_params = {}
 
     safe = name.lower().replace(' ', '_')
     joblib.dump(pipe, os.path.join(candidates_dir, f'{safe}_raw.pkl'))
 
-    # Calibration method = isotonic. Verified via src/compare_calibration.py (lowest validation Brier).
     try:
         calibrated = CalibratedClassifierCV(pipe, method='isotonic', cv=5)
         calibrated.fit(X_train, y_train)
-        print(f'  Calibrated {name} with isotonic regression')
+        calib_method = 'isotonic'
     except Exception as e:
         print(f'  WARNING: Calibration failed for {name}: {str(e)[:80]}')
-        print(f'  Falling back to uncalibrated pipeline')
         calibrated = pipe
+        calib_method = 'none'
     joblib.dump(calibrated, os.path.join(candidates_dir, f'{safe}_calibrated.pkl'))
 
     val_proba = calibrated.predict_proba(X_val)[:, 1]
     val_pr_auc = average_precision_score(y_val, val_proba)
+    val_brier = float(np.mean((val_proba - y_val) ** 2))
 
     best_f1, thresh_f1 = 0, 0.5
     for t in np.arange(0.01, 0.99, 0.01):
@@ -81,10 +94,32 @@ for name, model in models.items():
         profit_per_thresh.append((t, ep))
     thresh_profit, best_profit = max(profit_per_thresh, key=lambda x: x[1])
 
+    # --- MLflow logging per model ---
+    with mlflow.start_run(run_name=name):
+        mlflow.log_param("model_class", type(model).__name__)
+        mlflow.log_param("calibration", calib_method)
+        mlflow.log_param("n_train", len(X_train))
+        mlflow.log_param("n_val", len(X_val))
+        if best_params:
+            for k, v in best_params.items():
+                mlflow.log_param(f"hp_{k.replace('classifier__', '')}", v)
+        mlflow.log_metrics({
+            "val_pr_auc": float(val_pr_auc),
+            "val_brier": float(val_brier),
+            "val_f1": float(best_f1),
+            "threshold_f1": float(thresh_f1),
+            "threshold_profit": float(thresh_profit),
+            "val_profit": float(best_profit),
+        })
+        try:
+            mlflow.sklearn.log_model(calibrated, "model")
+        except Exception as e:
+            print(f"  WARN: mlflow.log_model failed: {str(e)[:80]}")
+
     comparison.append({
         'Model': name,
         'Val_PR_AUC': round(val_pr_auc, 4),
-        'Val_Brier': round(float(np.mean((val_proba - y_val) ** 2)), 4),
+        'Val_Brier': round(val_brier, 4),
         'Val_F1_Best': round(best_f1, 4),
         'Threshold_F1': round(thresh_f1, 2),
         'Threshold_Profit': round(thresh_profit, 3),
@@ -107,9 +142,6 @@ comparison_df.to_csv(os.path.join(reports_dir, 'model_comparison.csv'), index=Fa
 X_test.to_csv(os.path.join(reports_dir, 'X_test.csv'), index=False)
 pd.DataFrame({'y': y_test}).to_csv(os.path.join(reports_dir, 'y_test.csv'), index=False)
 
-import subprocess
-from datetime import datetime
-
 try:
     git_sha = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'],
                                        cwd=BASE_DIR, stderr=subprocess.DEVNULL).decode().strip()
@@ -117,12 +149,12 @@ except Exception:
     git_sha = 'unknown'
 
 try:
-    import sklearn, xgboost, pandas, numpy
+    import sklearn, xgboost
     env_versions = {
         'scikit-learn': sklearn.__version__,
         'xgboost': xgboost.__version__,
-        'pandas': pandas.__version__,
-        'numpy': numpy.__version__,
+        'pandas': pd.__version__,
+        'numpy': np.__version__,
     }
 except Exception:
     env_versions = {}
@@ -149,4 +181,4 @@ with open(os.path.join(BASE_DIR, 'models', 'model_metadata.json'), 'w') as f:
 
 print(f'\nWinner: {best_name} (Val PR-AUC={best_score:.4f})')
 print(f'F1 threshold: {best_thresh:.2f}, Profit threshold: {best_profit_thresh:.2f}')
-print('Calibrated model saved to models/production_model.pkl')
+print(f'MLflow runs saved to: {MLRUNS_DIR}')

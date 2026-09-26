@@ -11,3 +11,6 @@ reports/*.pkl
 reports/*.npy
 reports/X_test.csv
 reports/y_test.csv
+mlruns/
+logs/
+*.db
