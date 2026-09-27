@@ -187,6 +187,7 @@ with open(os.path.join(BASE_DIR, 'models', 'model_metadata.json'), 'w') as f:
         'val_brier': float(winner_row['Val_Brier']),
         'val_f1': float(winner_row['Val_F1_Best']),
         'val_profit': float(winner_row['Val_Profit']),
+        # Test metrics (from evaluate.py, patched in later)
     }, f, indent=4)
 
 print(f'\nWinner: {best_name} (Val PR-AUC={best_score:.4f})')

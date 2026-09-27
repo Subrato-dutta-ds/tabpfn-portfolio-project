@@ -1,4 +1,4 @@
-﻿import os, joblib, json, numpy as np, pandas as pd
+import os, joblib, json, numpy as np, pandas as pd
 from sklearn.metrics import f1_score, roc_auc_score, average_precision_score, brier_score_loss
 from src.config import BASE_DIR
 from src.schema import REVENUE_PER_SUBSCRIPTION, COST_PER_CONTACT
@@ -62,3 +62,18 @@ print(f'Brier: {brier:.4f} (calibrated)')
 print(f'Lift@20%: {lift_at_20:.2f}x | P@20%: {p_at_20:.4f}')
 print(f'Expected Profit@20%: Rs {exp_profit_top20:,.0f}')
 print('Saved: reports/final_test_results.csv')
+
+# --- Patch test metrics into metadata for promotion gate ---
+import json
+meta_path = os.path.join(BASE_DIR, 'models', 'model_metadata.json')
+if os.path.exists(meta_path):
+    with open(meta_path) as f:
+        meta = json.load(f)
+    meta['test_f1'] = float(f1)
+    meta['test_pr_auc'] = float(pr_auc)
+    meta['test_roc_auc'] = float(roc_auc)
+    meta['test_brier'] = float(brier)
+    meta['test_lift_at_20'] = float(lift_at_20)
+    with open(meta_path, 'w') as f:
+        json.dump(meta, f, indent=4)
+    print('Patched test metrics into model_metadata.json')

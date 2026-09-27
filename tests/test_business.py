@@ -50,3 +50,35 @@ def test_campaign_summary_metrics():
     assert s['contacts'] == 2
     assert abs(s['expected_conversions'] - 1.6) < 1e-6
     assert abs(s['expected_profit'] - (1.6 * 2000 - 100)) < 1e-6
+
+
+# --- Promotion gate tests ---
+
+def test_promotion_rejects_bad_auuc():
+    from src.promote_model import gate
+    cand = {'test_pr_auc': 0.50, 'test_brier': 0.07, 'test_f1': 0.55,
+            'auuc': 50.0, 'uplift_at_20': 0.10}
+    prod = {'test_pr_auc': 0.48, 'test_brier': 0.075, 'test_f1': 0.52,
+            'auuc': 200.0, 'uplift_at_20': 0.13}
+    promote, _ = gate(cand, prod)
+    assert promote is False
+
+
+def test_promotion_rejects_bad_uplift():
+    from src.promote_model import gate
+    cand = {'test_pr_auc': 0.50, 'test_brier': 0.07, 'test_f1': 0.55,
+            'auuc': 250.0, 'uplift_at_20': 0.05}
+    prod = {'test_pr_auc': 0.48, 'test_brier': 0.075, 'test_f1': 0.52,
+            'auuc': 200.0, 'uplift_at_20': 0.13}
+    promote, _ = gate(cand, prod)
+    assert promote is False
+
+
+def test_promotion_accepts_improvement():
+    from src.promote_model import gate
+    cand = {'test_pr_auc': 0.50, 'test_brier': 0.07, 'test_f1': 0.55,
+            'auuc': 250.0, 'uplift_at_20': 0.15}
+    prod = {'test_pr_auc': 0.48, 'test_brier': 0.075, 'test_f1': 0.52,
+            'auuc': 200.0, 'uplift_at_20': 0.13}
+    promote, _ = gate(cand, prod)
+    assert promote is True

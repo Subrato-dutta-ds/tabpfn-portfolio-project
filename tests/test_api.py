@@ -1,4 +1,4 @@
-﻿from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient
 from src.api import app
 import numpy as np
 import pandas as pd
@@ -94,18 +94,3 @@ def test_campaign_summary_zero_contacts():
     s = campaign_summary(np.array([0.9, 0.7, 0.5]), 0, 2000, 50)
     assert s['contacts'] == 0 and s['expected_profit'] == 0.0
 
-# -------- Promotion gate --------
-
-def test_promotion_gate_promotes_improvement():
-    from src.promote_model import gate
-    cand = {'val_pr_auc': 0.50, 'val_brier': 0.07, 'val_f1': 0.55, 'val_profit': 1_500_000}
-    prod = {'val_pr_auc': 0.48, 'val_brier': 0.075, 'val_f1': 0.52, 'val_profit': 1_400_000}
-    promote, _ = gate(cand, prod)
-    assert promote is True
-
-def test_promotion_gate_rejects_degradation():
-    from src.promote_model import gate
-    cand = {'val_pr_auc': 0.40, 'val_brier': 0.09, 'val_f1': 0.40, 'val_profit': 900_000}
-    prod = {'val_pr_auc': 0.48, 'val_brier': 0.075, 'val_f1': 0.52, 'val_profit': 1_400_000}
-    promote, _ = gate(cand, prod)
-    assert promote is False
