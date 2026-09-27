@@ -162,6 +162,8 @@ try:
 except Exception:
     env_versions = {}
 
+# Extract winning model metrics for the promotion gate
+winner_row = comparison_df.iloc[0]
 with open(os.path.join(BASE_DIR, 'models', 'model_metadata.json'), 'w') as f:
     json.dump({
         'model': best_name,
@@ -180,6 +182,11 @@ with open(os.path.join(BASE_DIR, 'models', 'model_metadata.json'), 'w') as f:
         'test_rows': int(len(X_test)),
         'feature_count': int(X_train.shape[1]),
         'env_versions': env_versions,
+        # Promotion gate metrics (winner on validation set)
+        'val_pr_auc': float(winner_row['Val_PR_AUC']),
+        'val_brier': float(winner_row['Val_Brier']),
+        'val_f1': float(winner_row['Val_F1_Best']),
+        'val_profit': float(winner_row['Val_Profit']),
     }, f, indent=4)
 
 print(f'\nWinner: {best_name} (Val PR-AUC={best_score:.4f})')

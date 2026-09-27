@@ -140,6 +140,8 @@ def predict(data: CustomerFeatures):
 def predict_batch(batch: BatchFeatures):
     if len(batch.data) > 5000:
         raise HTTPException(status_code=413, detail='Maximum batch size is 5000')
+    if len(batch.data) == 0:
+        return BatchPredictionResponse(results=[], total=0)
     try:
         records = [map_to_dataset(i) for i in batch.data]
         df = pd.DataFrame(records)
