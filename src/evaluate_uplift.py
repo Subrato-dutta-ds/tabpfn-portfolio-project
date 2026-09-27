@@ -1,4 +1,4 @@
-﻿import os, joblib, numpy as np, pandas as pd
+import os, json, joblib, numpy as np, pandas as pd
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -84,6 +84,19 @@ summary = {'auuc': auuc,
            'uplift@20pct': uplift_at_k(eval_df, 0.20),
            'uplift@30pct': uplift_at_k(eval_df, 0.30)}
 pd.DataFrame([summary]).to_csv(os.path.join(REPORTS, 'uplift_summary.csv'), index=False)
+
+# Patch uplift metrics into model_metadata.json so promotion gate can use them
+meta_path = os.path.join(BASE_DIR, 'models', 'model_metadata.json')
+if os.path.exists(meta_path):
+    with open(meta_path) as f:
+        meta = json.load(f)
+    meta['auuc'] = float(auuc)
+    meta['uplift_at_10'] = float(summary['uplift@10pct'])
+    meta['uplift_at_20'] = float(summary['uplift@20pct'])
+    meta['uplift_at_30'] = float(summary['uplift@30pct'])
+    with open(meta_path, 'w') as f:
+        json.dump(meta, f, indent=4)
+    print('Patched uplift metrics into model_metadata.json')
 
 print()
 print(f'AUUC: {auuc:.4f}')

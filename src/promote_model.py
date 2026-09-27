@@ -7,11 +7,7 @@ ACTIVE = os.path.join(MODELS, 'production_model_active.pkl')
 META = os.path.join(MODELS, 'model_metadata.json')
 ACTIVE_META = os.path.join(MODELS, 'model_metadata_active.json')
 
-TOLERANCES = {
-    'val_brier': 1.05,
-    'val_f1': 0.98,
-    'val_profit': 0.98,
-}
+TOLERANCES = {'val_brier': 1.05, 'val_f1': 0.98, 'val_profit': 0.98}
 
 
 def _safe(v, default=0.0):
@@ -22,71 +18,72 @@ def _safe(v, default=0.0):
 
 
 def gate(candidate, production):
+    """Pure function: returns (promote, checks). Safe to import in tests."""
     checks = []
     promote = True
 
-    c_prauc = _safe(candidate.get('val_pr_auc'))
-    p_prauc = _safe(production.get('val_pr_auc'))
-    if c_prauc < p_prauc:
-        promote = False
-        checks.append(('FAIL', f"PR-AUC decreased: {c_prauc:.4f} < {p_prauc:.4f}"))
-    else:
-        checks.append(('PASS', f"PR-AUC: {c_prauc:.4f} >= {p_prauc:.4f}"))
+    def _check_ge(key, label, tol=1.0):
+        nonlocal promote
+        c = _safe(candidate.get(key))
+        p = _safe(production.get(key))
+        if p > 0 and c < p * tol:
+            promote = False
+            checks.append(('FAIL', f"{label}: {c:.4f} < {p:.4f} (tol={tol})"))
+        else:
+            checks.append(('PASS', f"{label}: {c:.4f} vs {p:.4f}"))
 
-    c_brier = _safe(candidate.get('val_brier'), 1.0)
-    p_brier = _safe(production.get('val_brier'), 1.0)
-    if c_brier > p_brier * TOLERANCES['val_brier']:
-        promote = False
-        checks.append(('FAIL', f"Brier worsened >5%: {c_brier:.4f} vs {p_brier:.4f}"))
-    else:
-        checks.append(('PASS', f"Brier within tolerance: {c_brier:.4f} vs {p_brier:.4f}"))
+    def _check_le(key, label, tol=1.0):
+        nonlocal promote
+        c = _safe(candidate.get(key), 1.0)
+        p = _safe(production.get(key), 1.0)
+        if c > p * tol:
+            promote = False
+            checks.append(('FAIL', f"{label}: {c:.4f} > {p:.4f} (tol={tol})"))
+        else:
+            checks.append(('PASS', f"{label}: {c:.4f} vs {p:.4f}"))
 
-    c_f1 = _safe(candidate.get('val_f1'))
-    p_f1 = _safe(production.get('val_f1'))
-    if p_f1 > 0 and c_f1 < p_f1 * TOLERANCES['val_f1']:
-        promote = False
-        checks.append(('FAIL', f"F1 decreased >2%: {c_f1:.4f} vs {p_f1:.4f}"))
-    else:
-        checks.append(('PASS', f"F1: {c_f1:.4f} vs {p_f1:.4f}"))
-
-    c_profit = _safe(candidate.get('val_profit'))
-    p_profit = _safe(production.get('val_profit'))
-    if p_profit > 0 and c_profit < p_profit * TOLERANCES['val_profit']:
-        promote = False
-        checks.append(('FAIL', f"Val profit decreased >2%: {c_profit:,.0f} vs {p_profit:,.0f}"))
-    else:
-        checks.append(('PASS', f"Val profit: {c_profit:,.0f} vs {p_profit:,.0f}"))
+    _check_ge('val_pr_auc', 'PR-AUC', tol=1.0)
+    _check_le('val_brier', 'Brier', tol=TOLERANCES['val_brier'])
+    _check_ge('val_f1', 'F1', tol=TOLERANCES['val_f1'])
+    _check_ge('val_profit', 'Val profit', tol=TOLERANCES['val_profit'])
+    _check_ge('auuc', 'AUUC', tol=0.98)
+    _check_ge('uplift_at_20', 'Uplift@20', tol=0.98)
 
     return promote, checks
 
 
-with open(META) as f:
-    cand = json.load(f)
+def main():
+    with open(META) as f:
+        cand = json.load(f)
 
-if not os.path.exists(ACTIVE):
-    print("No active production model. Promoting candidate immediately.")
-    joblib.dump(joblib.load(CANDIDATE), ACTIVE)
-    with open(ACTIVE_META, 'w') as f:
-        json.dump(cand, f, indent=4)
-    print(f"Active model: {ACTIVE}")
-    raise SystemExit(0)
+    if not os.path.exists(ACTIVE):
+        print("No active production model. Promoting candidate immediately.")
+        joblib.dump(joblib.load(CANDIDATE), ACTIVE)
+        with open(ACTIVE_META, 'w') as f:
+            json.dump(cand, f, indent=4)
+        print(f"Active model: {ACTIVE}")
+        return
 
-with open(ACTIVE_META) as f:
-    prod = json.load(f)
+    with open(ACTIVE_META) as f:
+        prod = json.load(f)
 
-promote, checks = gate(cand, prod)
+    promote, checks = gate(cand, prod)
 
-print("=" * 60)
-print("PROMOTION GATE")
-print("=" * 60)
-for status, msg in checks:
-    print(f"  [{status}] {msg}")
-print("=" * 60)
+    print("=" * 60)
+    print("PROMOTION GATE")
+    print("=" * 60)
+    for status, msg in checks:
+        print(f"  [{status}] {msg}")
+    print("=" * 60)
 
-if promote:
-    joblib.dump(joblib.load(CANDIDATE), ACTIVE)
-    with open(ACTIVE_META, 'w') as f:
-        json.dump(cand, f, indent=4)
-    print(f"\nPROMOTED candidate to {ACTIVE}")
-else:
-    print(f"\nREJECTED candidate. Keeping active model.")
+    if promote:
+        joblib.dump(joblib.load(CANDIDATE), ACTIVE)
+        with open(ACTIVE_META, 'w') as f:
+            json.dump(cand, f, indent=4)
+        print(f"\nPROMOTED candidate to {ACTIVE}")
+    else:
+        print(f"\nREJECTED candidate. Keeping active model.")
+
+
+if __name__ == "__main__":
+    main()

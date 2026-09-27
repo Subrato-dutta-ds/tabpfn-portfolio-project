@@ -64,3 +64,23 @@ else:
 st.markdown("---")
 st.subheader("📈 Recent Predictions")
 st.dataframe(df.tail(100)[['timestamp', 'probability', 'prediction']], use_container_width=True, hide_index=True)
+
+# --- Delayed-label performance ---
+st.markdown("---")
+st.subheader("📊 Live Model Performance (Delayed Labels)")
+try:
+    from src.delayed_performance import compute_delayed_metrics
+    dm = compute_delayed_metrics()
+    if dm:
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown(f'<div class="metric-card"><div class="metric-label">Labeled</div><div class="metric-value">{dm["n_labeled"]:,}</div></div>', unsafe_allow_html=True)
+        with c2:
+            st.markdown(f'<div class="metric-card"><div class="metric-label">PR-AUC</div><div class="metric-value">{dm["pr_auc"]:.3f}</div></div>', unsafe_allow_html=True)
+        with c3:
+            st.markdown(f'<div class="metric-card"><div class="metric-label">Brier</div><div class="metric-value">{dm["brier"]:.3f}</div></div>', unsafe_allow_html=True)
+        st.dataframe(pd.DataFrame([dm]), use_container_width=True, hide_index=True)
+    else:
+        st.info("Add labeled outcomes to `logs/outcomes.csv` (row_index,actual).")
+except Exception as e:
+    st.warning(f"Delayed monitoring unavailable: {e}")

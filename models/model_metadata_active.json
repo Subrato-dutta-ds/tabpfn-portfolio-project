@@ -6,9 +6,9 @@
     "revenue_per_subscription": 2000,
     "cost_per_contact": 50,
     "calibration": "isotonic (5-fold CV)",
-    "model_version": "e354563",
-    "git_sha": "e354563",
-    "trained_at": "2026-09-27T05:10:46.276811Z",
+    "model_version": "05c0b0b",
+    "git_sha": "05c0b0b",
+    "trained_at": "2026-09-27T05:22:37.334370Z",
     "feature_schema_version": "1.0",
     "training_rows": 24712,
     "validation_rows": 8238,
@@ -28,5 +28,9 @@
     "test_pr_auc": 0.47933638222333497,
     "test_roc_auc": 0.8090977905797445,
     "test_brier": 0.07535245035641122,
-    "test_lift_at_20": 3.2878352490421454
+    "test_lift_at_20": 3.2878352490421454,
+    "auuc": 198.3472407358038,
+    "uplift_at_10": 0.1201728696600704,
+    "uplift_at_20": 0.12680207088809237,
+    "uplift_at_30": 0.13231120022015175
 }
