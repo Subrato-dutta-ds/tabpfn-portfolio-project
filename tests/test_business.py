@@ -1,4 +1,4 @@
-﻿import numpy as np
+import numpy as np
 from src.business import (rank_customers, expected_profit, incremental_profit,
                           optimal_k, optimal_k_uplift, campaign_summary)
 
@@ -52,13 +52,25 @@ def test_campaign_summary_metrics():
     assert abs(s['expected_profit'] - (1.6 * 2000 - 100)) < 1e-6
 
 
-# --- Promotion gate tests ---
+
+
+# --- Promotion gate tests (using PROMO metrics) ---
+
+def test_promotion_accepts_improvement():
+    from src.promote_model import gate
+    cand = {'promo_pr_auc': 0.50, 'promo_brier': 0.07, 'promo_f1': 0.55,
+            'auuc': 250.0, 'uplift_at_20': 0.15}
+    prod = {'promo_pr_auc': 0.48, 'promo_brier': 0.075, 'promo_f1': 0.52,
+            'auuc': 200.0, 'uplift_at_20': 0.13}
+    promote, _ = gate(cand, prod)
+    assert promote is True
+
 
 def test_promotion_rejects_bad_auuc():
     from src.promote_model import gate
-    cand = {'test_pr_auc': 0.50, 'test_brier': 0.07, 'test_f1': 0.55,
+    cand = {'promo_pr_auc': 0.50, 'promo_brier': 0.07, 'promo_f1': 0.55,
             'auuc': 50.0, 'uplift_at_20': 0.10}
-    prod = {'test_pr_auc': 0.48, 'test_brier': 0.075, 'test_f1': 0.52,
+    prod = {'promo_pr_auc': 0.48, 'promo_brier': 0.075, 'promo_f1': 0.52,
             'auuc': 200.0, 'uplift_at_20': 0.13}
     promote, _ = gate(cand, prod)
     assert promote is False
@@ -66,19 +78,19 @@ def test_promotion_rejects_bad_auuc():
 
 def test_promotion_rejects_bad_uplift():
     from src.promote_model import gate
-    cand = {'test_pr_auc': 0.50, 'test_brier': 0.07, 'test_f1': 0.55,
+    cand = {'promo_pr_auc': 0.50, 'promo_brier': 0.07, 'promo_f1': 0.55,
             'auuc': 250.0, 'uplift_at_20': 0.05}
-    prod = {'test_pr_auc': 0.48, 'test_brier': 0.075, 'test_f1': 0.52,
+    prod = {'promo_pr_auc': 0.48, 'promo_brier': 0.075, 'promo_f1': 0.52,
             'auuc': 200.0, 'uplift_at_20': 0.13}
     promote, _ = gate(cand, prod)
     assert promote is False
 
 
-def test_promotion_accepts_improvement():
+def test_promotion_rejects_bad_pr_auc():
     from src.promote_model import gate
-    cand = {'test_pr_auc': 0.50, 'test_brier': 0.07, 'test_f1': 0.55,
+    cand = {'promo_pr_auc': 0.40, 'promo_brier': 0.07, 'promo_f1': 0.55,
             'auuc': 250.0, 'uplift_at_20': 0.15}
-    prod = {'test_pr_auc': 0.48, 'test_brier': 0.075, 'test_f1': 0.52,
+    prod = {'promo_pr_auc': 0.48, 'promo_brier': 0.075, 'promo_f1': 0.52,
             'auuc': 200.0, 'uplift_at_20': 0.13}
     promote, _ = gate(cand, prod)
-    assert promote is True
+    assert promote is False

@@ -7,8 +7,6 @@ ACTIVE = os.path.join(MODELS, 'production_model_active.pkl')
 META = os.path.join(MODELS, 'model_metadata.json')
 ACTIVE_META = os.path.join(MODELS, 'model_metadata_active.json')
 
-TOLERANCES = {'test_brier': 1.05, 'test_f1': 0.98, 'test_pr_auc': 1.0}
-
 
 def _safe(v, default=0.0):
     try:
@@ -18,7 +16,10 @@ def _safe(v, default=0.0):
 
 
 def gate(candidate, production):
-    """Pure function: promotion based on TEST metrics, not validation."""
+    """
+    Promotion gate using PROMO-set metrics (never the test set).
+    Candidate must not degrade relative to active production.
+    """
     checks = []
     promote = True
 
@@ -42,9 +43,10 @@ def gate(candidate, production):
         else:
             checks.append(('PASS', f"{label}: {c:.4f} vs {p:.4f}"))
 
-    _ge('test_pr_auc', 'test_pr_auc', 'Test PR-AUC', tol=1.0)
-    _le('test_brier', 'test_brier', 'Test Brier', tol=1.05)
-    _ge('test_f1', 'test_f1', 'Test F1', tol=0.98)
+    # Promo-set metrics only — no test-set leakage
+    _ge('promo_pr_auc', 'promo_pr_auc', 'Promo PR-AUC', tol=1.0)
+    _le('promo_brier', 'promo_brier', 'Promo Brier', tol=1.05)
+    _ge('promo_f1', 'promo_f1', 'Promo F1', tol=0.98)
     _ge('auuc', 'auuc', 'AUUC', tol=0.98)
     _ge('uplift_at_20', 'uplift_at_20', 'Uplift@20', tol=0.98)
 
@@ -68,7 +70,7 @@ def main():
 
     promote, checks = gate(cand, prod)
     print("=" * 60)
-    print("PROMOTION GATE (test-set metrics)")
+    print("PROMOTION GATE (promo-set metrics — test set untouched)")
     print("=" * 60)
     for status, msg in checks:
         print(f"  [{status}] {msg}")

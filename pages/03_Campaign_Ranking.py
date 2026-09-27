@@ -1,4 +1,4 @@
-﻿import streamlit as st
+import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
@@ -104,7 +104,8 @@ c1, c2, c3, c4 = st.columns(4)
 vals = [f"{summary['contacts']:,}", f"{summary['expected_conversions']:.0f}",
         f"Rs {summary['expected_profit']:,.0f}", f"{summary['lift']:.2f}x"]
 labels = ["Optimal K", f"{'Incr' if use_uplift else 'Exp'} Conversions",
-          f"{'Incr' if use_uplift else 'Exp'} Profit", "Lift"]
+          f"{'Incr' if use_uplift else 'Exp'} Profit",
+          "Incremental Uplift@K" if use_uplift else "Lift"]
 for col, l, v in zip([c1, c2, c3, c4], labels, vals):
     with col:
         st.markdown(f'<div class="metric-card"><div class="metric-label">{l}</div><div class="metric-value">{v}</div></div>', unsafe_allow_html=True)
@@ -116,7 +117,7 @@ st.subheader(f"Your Selection: K = {user_k:,}")
 c1, c2, c3, c4 = st.columns(4)
 u_vals = [f"{summary_user['contacts']:,}", f"{summary_user['expected_conversions']:.0f}",
           f"Rs {summary_user['expected_profit']:,.0f}", f"{summary_user['lift']:.2f}x"]
-for col, l, v in zip([c1, c2, c3, c4], ["Contacts", "Conversions", "Profit", "Lift"], u_vals):
+for col, l, v in zip([c1, c2, c3, c4], ["Contacts", "Conversions", "Profit", "Incremental Uplift@K" if use_uplift else "Lift"], u_vals):
     with col:
         st.markdown(f'<div class="metric-card"><div class="metric-label">{l}</div><div class="metric-value">{v}</div></div>', unsafe_allow_html=True)
 

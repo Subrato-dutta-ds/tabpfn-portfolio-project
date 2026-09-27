@@ -1,4 +1,4 @@
-import os, joblib, json, subprocess, numpy as np, pandas as pd
+﻿import os, joblib, json, subprocess, numpy as np, pandas as pd
 from datetime import datetime
 import mlflow
 import mlflow.sklearn
@@ -12,7 +12,6 @@ from src.data_loader import load_data
 from src.config import BASE_DIR, get_models, get_param_grids
 from src.schema import RANDOM_STATE, TARGET_COLUMN, DROPPED_COLUMNS, REVENUE_PER_SUBSCRIPTION, COST_PER_CONTACT
 
-# --- MLflow setup ---
 MLRUNS_DIR = os.path.join(BASE_DIR, 'mlruns')
 os.makedirs(MLRUNS_DIR, exist_ok=True)
 mlflow.set_tracking_uri(f"file:{MLRUNS_DIR}")
@@ -27,10 +26,15 @@ df = load_data()
 X = df.drop(columns=[TARGET_COLUMN] + DROPPED_COLUMNS, errors='ignore')
 y = df[TARGET_COLUMN].map({'yes': 1, 'no': 0})
 
-X_train_full, X_test, y_train_full, y_test = train_test_split(X, y, test_size=0.2, random_state=RANDOM_STATE, stratify=y)
-X_train, X_val, y_train, y_val = train_test_split(X_train_full, y_train_full, test_size=0.25, random_state=RANDOM_STATE, stratify=y_train_full)
+# 4-way split: 60% train / 15% val / 5% promo / 20% test
+X_train_val, X_test, y_train_val, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=RANDOM_STATE, stratify=y)
+X_train_tmp, X_promo, y_train_tmp, y_promo = train_test_split(
+    X_train_val, y_train_val, test_size=0.0625, random_state=RANDOM_STATE, stratify=y_train_val)
+X_train, X_val, y_train, y_val = train_test_split(
+    X_train_tmp, y_train_tmp, test_size=0.2, random_state=RANDOM_STATE, stratify=y_train_tmp)
 
-print(f'Train: {len(X_train)}, Val: {len(X_val)}, Test: {len(X_test)}')
+print(f'Train: {len(X_train)}, Val: {len(X_val)}, Promo: {len(X_promo)}, Test: {len(X_test)}')
 
 cat_cols = X.select_dtypes(include=['object']).columns
 num_cols = X.select_dtypes(exclude=['object']).columns
@@ -72,7 +76,7 @@ for name, model in models.items():
         calibrated.fit(X_train, y_train)
         calib_method = 'isotonic'
     except Exception as e:
-        print(f'  WARNING: Calibration failed for {name}: {str(e)[:80]}')
+        print(f'  WARN: Calibration failed: {str(e)[:80]}')
         calibrated = pipe
         calib_method = 'none'
     joblib.dump(calibrated, os.path.join(candidates_dir, f'{safe}_calibrated.pkl'))
@@ -82,7 +86,7 @@ for name, model in models.items():
     val_brier = float(np.mean((val_proba - y_val) ** 2))
 
     best_f1, thresh_f1 = 0, 0.5
-    for t in np.arange(0.01, 0.99, 0.01):
+    for t in np.arange(0.005, 0.99, 0.005):
         f1 = f1_score(y_val, (val_proba >= t).astype(int))
         if f1 > best_f1:
             best_f1, thresh_f1 = f1, t
@@ -95,36 +99,29 @@ for name, model in models.items():
         profit_per_thresh.append((t, ep))
     thresh_profit, best_profit = max(profit_per_thresh, key=lambda x: x[1])
     thresh_profit = max(thresh_profit, break_even)
-    best_profit = float(np.sum(val_proba[val_proba >= thresh_profit] * REVENUE_PER_SUBSCRIPTION - COST_PER_CONTACT))
 
-    # --- MLflow logging per model ---
     with mlflow.start_run(run_name=name):
         mlflow.log_param("model_class", type(model).__name__)
         mlflow.log_param("calibration", calib_method)
-        mlflow.log_param("n_train", len(X_train))
-        mlflow.log_param("n_val", len(X_val))
-        if best_params:
-            for k, v in best_params.items():
-                mlflow.log_param(f"hp_{k.replace('classifier__', '')}", v)
+        for k, v in best_params.items():
+            mlflow.log_param(f"hp_{k.replace('classifier__', '')}", v)
         mlflow.log_metrics({
             "val_pr_auc": float(val_pr_auc),
             "val_brier": float(val_brier),
             "val_f1": float(best_f1),
             "threshold_f1": float(thresh_f1),
-            "threshold_profit": float(thresh_profit),
-            "val_profit": float(best_profit),
         })
         try:
             mlflow.sklearn.log_model(calibrated, "model")
-        except Exception as e:
-            print(f"  WARN: mlflow.log_model failed: {str(e)[:80]}")
+        except Exception:
+            pass
 
     comparison.append({
         'Model': name,
         'Val_PR_AUC': round(val_pr_auc, 4),
         'Val_Brier': round(val_brier, 4),
         'Val_F1_Best': round(best_f1, 4),
-        'Threshold_F1': round(thresh_f1, 2),
+        'Threshold_F1': round(thresh_f1, 3),
         'Threshold_Profit': round(thresh_profit, 3),
         'Val_Profit': round(best_profit, 2),
     })
@@ -137,12 +134,27 @@ for name, model in models.items():
         best_profit_thresh = thresh_profit
         best_calibrated = calibrated
 
+# Compute PROMOTION metrics for the winning model (on PROMO set)
+promo_proba = best_calibrated.predict_proba(X_promo)[:, 1]
+promo_pred = (promo_proba >= best_thresh).astype(int)
+promo_f1 = float(f1_score(y_promo, promo_pred))
+promo_pr_auc = float(average_precision_score(y_promo, promo_proba))
+promo_brier = float(np.mean((promo_proba - y_promo) ** 2))
+
+# Save candidate artifact
 joblib.dump(best_calibrated, os.path.join(BASE_DIR, 'models', 'production_model.pkl'))
 
 comparison_df = pd.DataFrame(comparison).sort_values('Val_PR_AUC', ascending=False)
 comparison_df.to_csv(os.path.join(reports_dir, 'model_comparison.csv'), index=False)
 
+# Save splits for reproducibility
+X_train.to_csv(os.path.join(reports_dir, 'X_train.csv'), index=False)
+X_val.to_csv(os.path.join(reports_dir, 'X_val.csv'), index=False)
+X_promo.to_csv(os.path.join(reports_dir, 'X_promo.csv'), index=False)
 X_test.to_csv(os.path.join(reports_dir, 'X_test.csv'), index=False)
+pd.DataFrame({'y': y_train}).to_csv(os.path.join(reports_dir, 'y_train.csv'), index=False)
+pd.DataFrame({'y': y_val}).to_csv(os.path.join(reports_dir, 'y_val.csv'), index=False)
+pd.DataFrame({'y': y_promo}).to_csv(os.path.join(reports_dir, 'y_promo.csv'), index=False)
 pd.DataFrame({'y': y_test}).to_csv(os.path.join(reports_dir, 'y_test.csv'), index=False)
 
 try:
@@ -151,18 +163,6 @@ try:
 except Exception:
     git_sha = 'unknown'
 
-try:
-    import sklearn, xgboost
-    env_versions = {
-        'scikit-learn': sklearn.__version__,
-        'xgboost': xgboost.__version__,
-        'pandas': pd.__version__,
-        'numpy': np.__version__,
-    }
-except Exception:
-    env_versions = {}
-
-# Extract winning model metrics for the promotion gate
 winner_row = comparison_df.iloc[0]
 with open(os.path.join(BASE_DIR, 'models', 'model_metadata.json'), 'w') as f:
     json.dump({
@@ -179,17 +179,21 @@ with open(os.path.join(BASE_DIR, 'models', 'model_metadata.json'), 'w') as f:
         'feature_schema_version': '1.0',
         'training_rows': int(len(X_train)),
         'validation_rows': int(len(X_val)),
+        'promo_rows': int(len(X_promo)),
         'test_rows': int(len(X_test)),
         'feature_count': int(X_train.shape[1]),
-        'env_versions': env_versions,
-        # Promotion gate metrics (winner on validation set)
+        # Validation metrics (model selection)
         'val_pr_auc': float(winner_row['Val_PR_AUC']),
         'val_brier': float(winner_row['Val_Brier']),
         'val_f1': float(winner_row['Val_F1_Best']),
         'val_profit': float(winner_row['Val_Profit']),
-        # Test metrics (from evaluate.py, patched in later)
+        # Promotion metrics (independent eval set — NOT the test set)
+        'promo_pr_auc': promo_pr_auc,
+        'promo_brier': promo_brier,
+        'promo_f1': promo_f1,
     }, f, indent=4)
 
-print(f'\nWinner: {best_name} (Val PR-AUC={best_score:.4f})')
-print(f'F1 threshold: {best_thresh:.2f}, Profit threshold: {best_profit_thresh:.2f}')
+print(f'\nWinner: {best_name}')
+print(f'Val PR-AUC: {best_score:.4f}')
+print(f'Promo PR-AUC: {promo_pr_auc:.4f} | Promo Brier: {promo_brier:.4f} | Promo F1: {promo_f1:.4f}')
 print(f'MLflow runs saved to: {MLRUNS_DIR}')

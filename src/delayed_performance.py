@@ -5,6 +5,17 @@ from sklearn.metrics import roc_auc_score, average_precision_score, f1_score, br
 REPORTS = os.path.join(BASE_DIR, 'reports')
 LOGS = os.path.join(BASE_DIR, 'logs', 'predictions.jsonl')
 OUTCOMES = os.path.join(BASE_DIR, 'logs', 'outcomes.csv')
+META_PATH = os.path.join(BASE_DIR, 'models', 'model_metadata.json')
+
+
+def _load_threshold():
+    if not os.path.exists(META_PATH):
+        return 0.5
+    try:
+        with open(META_PATH) as f:
+            return float(json.load(f).get('threshold_f1', 0.5))
+    except Exception:
+        return 0.5
 
 
 def load_predictions():
@@ -33,31 +44,29 @@ def compute_delayed_metrics():
     if preds.empty:
         print("No predictions logged yet.")
         return None
-
     if outcomes.empty:
-        print("No outcomes file. Create logs/outcomes.csv with 'row_index,actual' columns.")
-        print("Tip: simulate by adding {'row_index': 0, 'actual': 1} rows.")
+        print("No outcomes file. Create logs/outcomes.csv with 'row_index,actual'.")
         return None
 
     preds = preds.reset_index().rename(columns={'index': 'row_index'})
     merged = preds.merge(outcomes, on='row_index', how='inner')
-
     if len(merged) < 10:
         print(f"Only {len(merged)} labeled rows. Need at least 10.")
         return None
 
     y = merged['actual'].values
     p = merged['probability'].values
+    thr = _load_threshold()
 
     metrics = {
         'n_labeled': int(len(merged)),
+        'production_threshold': float(thr),
         'roc_auc': float(roc_auc_score(y, p)),
         'pr_auc': float(average_precision_score(y, p)),
         'brier': float(brier_score_loss(y, p)),
-        'f1_at_0.5': float(f1_score(y, (p >= 0.5).astype(int), zero_division=0)),
+        'f1_at_production_threshold': float(f1_score(y, (p >= thr).astype(int), zero_division=0)),
     }
 
-    # Top-K precision at 20%
     k = int(len(merged) * 0.20)
     top = merged.nlargest(k, 'probability')
     metrics['precision_at_20'] = float(top['actual'].mean())
